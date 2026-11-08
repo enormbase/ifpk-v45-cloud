@@ -21,6 +21,10 @@ INDICATOR = 'HOME_PRICE_APT_DAEJEON_SEOGU'
 REGION = '510050'
 INDEX = '100001'
 SOURCE_CODE = f'{TABLE}/{REGION}/{INDEX}'
+# A new R-ONE index base was officially introduced in July 2026.
+# Keep all prior DB observations under the legacy ID, never silently overwrite.
+REBASED_INDICATOR = INDICATOR + '_BASE202606'
+REBASED_SOURCE_CODE = SOURCE_CODE + '/BASE202606'
 
 
 def _validate_metadata(fetch: Callable):
@@ -62,11 +66,12 @@ def _parse_page(rows: list[dict], now: dt.date):
 
 
 def _download_period(fetch, now: dt.date, start_year=2015, psize=240, max_pages=6):
-    # The official API uses a year range for month-series queries. Filter both
+    # R-ONE monthly dates are YYYYMM, NOT YYYY. The previous END_WRTTIME='2026'
+    # caused months such as 202601 to sort beyond the end of the range. Filter both
     # CLS_ID (region) and ITM_ID (index) at the provider, and verify all rows.
     base = {'STATBL_ID': TABLE, 'DTACYCLE_CD': 'MM', 'CLS_ID': REGION,
-            'ITM_ID': INDEX, 'START_WRTTIME': str(start_year),
-            'END_WRTTIME': str(now.year), 'pSize': psize}
+            'ITM_ID': INDEX, 'START_WRTTIME': f'{start_year}01',
+            'END_WRTTIME': f'{now.year}{now.month:02d}', 'pSize': psize}
     result = []
     for page in range(1, max_pages + 1):
         raw, total = fetch('SttsApiTblData.do', {**base, 'pIndex': page})
@@ -115,7 +120,48 @@ def collect_rone_monthly(fetch: Callable | None = None, now: dt.date | None = No
     return [by_month[k] for k in sorted(by_month)]
 
 
-def calculate_home_reference(seq, *, current: dt.date | None = None):
+def collect_rone_202606_verified(fetch: Callable | None = None, now: dt.date | None = None):
+    """Collect a new, separate official-base vintage without touching legacy rows.
+
+    Safety gate: 2026-06 must be exactly the official 100-point anchor,
+    2026-05..07 must exist with a plausible bridge, and at least one
+    post-rebase month must be available. Do NOT concatenate stored legacy
+    rows with newly retrieved values.
+    """
+    fetch = fetch or fetch_xml_rows
+    now = now or dt.date.today()
+    _validate_metadata(fetch)
+    rows = _download_period(fetch, now)
+    by_month = {}
+    for row in rows:
+        month = row['date']
+        if month in by_month and not math.isclose(by_month[month]['value'], row['value'], abs_tol=1e-9, rel_tol=0):
+            raise ValueError('R-ONE 같은 월에 서로 다른 지수가 있어 새 기준 저장을 보류합니다')
+        by_month[month] = row
+    if not {'2026-05','2026-06','2026-07'}.issubset(by_month):
+        last = max(by_month, default='자료 없음')
+        raise ValueError('R-ONE 월간 종료시점 또는 2026년 자료 확인 필요; 조회 최종월 '+last)
+    anchor = by_month['2026-06']['value']
+    if not math.isclose(anchor, 100.0, rel_tol=0, abs_tol=0.005):
+        raise ValueError('R-ONE 2026-06 기준지수=100 검증 실패; 확인된 값 '+f'{anchor:.4f}')
+    for a,b in [('2026-05','2026-06'),('2026-06','2026-07')]:
+        step = by_month[b]['value']/by_month[a]['value'] - 1
+        if not math.isfinite(step) or abs(step) > 0.10:
+            raise ValueError('R-ONE 지수 기준연결 주변에서 비정상적 변동 발견; 재검토 필요')
+    # All rows must originate from THIS single official API response, not
+    # from a splice with old Supabase values of uncertain base/revision.
+    result=[]
+    for key in sorted(by_month):
+        row=by_month[key].copy()
+        row['id']=REBASED_INDICATOR
+        row['source_code']=REBASED_SOURCE_CODE
+        row['source_updated']=(row.get('source_updated') or '')[:64]
+        result.append(row)
+    return result
+
+
+def calculate_home_reference(seq, *, current: dt.date | None = None,
+                             indicator_id: str = INDICATOR):
     """CAGR from exactly 12/60/120 adjacent monthly intervals; no interpolation.
 
     Region price index != house appraisal. Only return comparable reference
@@ -131,7 +177,8 @@ def calculate_home_reference(seq, *, current: dt.date | None = None):
     if age < 0:
         raise ValueError('R-ONE 최신월이 미래입니다')
     output = {
-        'id': INDICATOR, 'basis': 'regional_sale_index',
+        'id': indicator_id, 'basis': 'regional_sale_index',
+        'indexBaseMonth': '2026-06' if indicator_id == REBASED_INDICATOR else 'unverified_legacy',
         'lastMonth': latest['date'], 'latestObservedIndex': latest['value'],
         'value': latest['value'], 'count': len(seq),
         'sourceCode': latest.get('sourceCode', SOURCE_CODE),

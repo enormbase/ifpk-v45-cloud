@@ -23,14 +23,17 @@ from urllib.parse import urlsplit
 
 from ifpk_collector import INDICATORS, get_kosis, get_ecos, load_ecos_series, contiguous_values, valid_month
 from cpi_special import collect_special_cpis
-from rone_live import INDICATOR as RONE_INDICATOR, collect_rone_monthly, calculate_home_reference
+from rone_live import (
+    INDICATOR as RONE_INDICATOR, REBASED_INDICATOR as RONE_REBASED,
+    collect_rone_202606_verified, calculate_home_reference,
+)
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 DATA = ROOT / 'docs' / 'data'
 SOURCE_SHEET_ID = '1E7Sqmb4CeTTqpn8vDcl0FMjxSWWZ1qcgZyBQfOteJTM'
 MAX_ROWS = 20000
-ALL_INDICATORS = {**INDICATORS, RONE_INDICATOR: {'name':'대전 서구 아파트 매매가격지수', 'calc':'regional_sale_index'}}
+ALL_INDICATORS = {**INDICATORS, RONE_INDICATOR: {'name':'대전 서구 아파트 매매가격지수 (기존)', 'calc':'regional_sale_index'}, RONE_REBASED: {'name':'대전 서구 아파트 매매가격지수 (2026-06 기준)', 'calc':'regional_sale_index'}}
 
 
 def utc_now():
@@ -159,7 +162,7 @@ def calculate_estimates(records):
         kind=desc['calc']
         entry={'id':key,'count':len(seq),'lastMonth':seq[-1]['date'], 'basis':kind,'status':'ready','value':None}
         if kind=='regional_sale_index':
-            output.append(calculate_home_reference(seq)); continue
+            output.append(calculate_home_reference(seq,indicator_id=key)); continue
         if kind=='latest':
             entry['value']=seq[-1]['value']
         else:
@@ -265,9 +268,9 @@ def gather_official_sources():
     # KOSIS/ECOS collection or deployment. Failure is visible in DB runs.
     if os.getenv('RONE_API_KEY', '').strip():
         try:
-            tasks.append((RONE_INDICATOR, collect_rone_monthly()))
+            tasks.append((RONE_REBASED, collect_rone_202606_verified()))
         except (ValueError, RuntimeError) as exc:
-            tasks.append((RONE_INDICATOR, {'error': 'R-ONE 대전 서구 검증 보류: '+str(exc)[:115]}))
+            tasks.append((RONE_REBASED, {'error': 'R-ONE 새 기준 검증 보류: '+str(exc)[:115]}))
     return tasks
 
 
