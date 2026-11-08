@@ -312,37 +312,108 @@ def diagnose_small_matrix(valid_ids: set[str], fetch=None, pause=None) -> list[d
     return results
 
 
+def safe_target_observations(rows: list[dict], region_code: str, item_code: str) -> list[dict]:
+    """Verify every field before showing a value; never trust returned rows blindly."""
+    out=[]
+    for row in rows:
+        if str(row.get('CLS_ID','')).strip() != region_code:
+            continue
+        if str(row.get('ITM_ID','')).strip() != item_code:
+            continue
+        table_id = str(row.get('STATBL_ID','')).strip()
+        if table_id and table_id != TABLE:
+            continue
+        freq = str(row.get('DTACYCLE_CD','')).strip()
+        if freq and freq != 'MM':
+            continue
+        name = str(row.get('ITM_NM','')) + ' ' + str(row.get('ITM_FULLNM',''))
+        if '지수' not in name:
+            continue
+        month = month_of(row)
+        if not month:
+            continue
+        try:
+            value=float(str(row.get('DTA_VAL','')).replace(',',''))
+        except (TypeError,ValueError):
+            continue
+        if not math.isfinite(value) or value<=0:
+            continue
+        out.append({'month':month,'index':value,'cls_id':region_code,
+                    'item_id':item_code, 'region_name':str(row.get('CLS_FULLNM') or row.get('CLS_NM') or ''),
+                    'item_name':str(row.get('ITM_NM') or ''), 'unit':str(row.get('UI_NM') or '')})
+    return sorted(out,key=lambda r:r['month'])
+
+
+def read_region_index(region_code: str, item_code: str, fetch=None, pause=None) -> list[dict]:
+    """R-ONE: region belongs in CLS_ID; index name belongs in ITM_ID.
+
+    Calls at most two targeted API requests. If one disconnects, do not flood
+    the provider with automatic retries. No Supabase writes are performed.
+    """
+    if fetch is None:fetch=fetch_xml_rows
+    if pause is None:pause=time.sleep
+    base={'STATBL_ID':TABLE,'DTACYCLE_CD':'MM','CLS_ID':region_code,'ITM_ID':item_code,
+          'pIndex':1,'pSize':24}
+    cases=[('2024년 9월 단일시점',{'WRTTIME_IDTFR_ID':'202409'}),
+           ('2024년 이후 기간',{'START_WRTTIME':'2024','END_WRTTIME':'2026'})]
+    for label,when in cases:
+        pause(1.0)
+        try:
+            rows,total=fetch('SttsApiTblData.do',{**base,**when})
+        except ValueError as exc:
+            print('데이터 요청 오류:',str(exc)[:140])
+            # Stop rather than retry on server-side disconnects.
+            return []
+        verified=safe_target_observations(rows,region_code,item_code)
+        print('대전 서구 관측값:',label,'전체',total if total is not None else '?',
+              '수신',len(rows),'검증 통과',len(verified))
+        if rows and not verified:
+            sample=rows[0]
+            print('참고: 응답 코드 불일치 (CLS_ID / ITM_ID / ITM_NM):',
+                  str(sample.get('CLS_ID',''))[:20],str(sample.get('ITM_ID',''))[:20],
+                  str(sample.get('ITM_NM',''))[:30])
+            # Reject unexpected mixed series; don't switch codes blindly.
+            return []
+        if verified:
+            return verified
+    return []
+
+
 def run():
     if not os.getenv('RONE_API_KEY','').strip():
         raise ValueError('RONE_API_KEY GitHub Secret 설정을 확인해 주세요')
-    print('IFPK V48: R-ONE 대전 서구 아파트 매매가격지수 안전진단 V6')
-    print('1단계: 공식 통계표 목록 조회')
-    tables=[]
-    for page in range(1,3):
-        batch,total=fetch_xml_rows('SttsApiTbl.do',{'pIndex':page,'pSize':1000})
-        tables+=batch
-        if not batch or (total is not None and len(tables)>=total) or len(batch)<1000:
-            break
-    print('공식 통계표 목록:',len(tables),'건')
-    item=choose_table(tables)
-    print('검증 통계표:',TABLE,'/',item.get('STATBL_NM',''),'/ 주기',item.get('DTACYCLE_CD',''))
-    print('2단계: 공식 항목 목록 및 대전 서구 코드 확인')
+    print('IFPK V48 대전 서구 아파트 매매가격지수 검증 V7: 필터 필드 교정')
+    print('공식 개발가이드: 지역=CLS_ID, 지수=ITM_ID (V6의 반대 지정 오류 수정)')
+    print('1단계: 대상 표·항목 메타데이터 확인')
+    tables,_=fetch_xml_rows('SttsApiTbl.do',{'pIndex':1,'pSize':1000})
+    table=choose_table(tables)
+    print('통계표:',TABLE,str(table.get('STATBL_NM',''))[:100])
     items,_=fetch_xml_rows('SttsApiTblItm.do',{'STATBL_ID':TABLE,'pIndex':1,'pSize':1000})
-    valid_ids=verified_region_item_ids(items)
-    print('항목 목록:',len(items),'건 / 대전서구 공식 항목 후보:',', '.join(sorted(valid_ids)) or '없음')
-    if not valid_ids: raise ValueError('공식 항목 목록에서 대전광역시 서구 코드 확인 불가')
-    print('3단계: 과도한 6개월 연속 조회 생략 (서버 연결 종료 방지)')
-    results=diagnose_small_matrix(valid_ids)
-    any_verified=False
-    # Do not assert a match without a published observation and official IDs.
-    # Validation of historical series and index base remains for a later step.
-    print('4단계 진단 요청 결과:',len(results),'건')
-    print('R-ONE 수치 검증·DB 저장은 보류. 기존 CPI/금리 및 공개사이트 유지.')
-    return 2
+    region_candidates=verified_region_item_ids(items)
+    if len(region_candidates)!=1:
+        print('대전 서구 후보가 1개가 아님:',len(region_candidates))
+        return 2
+    region_code=next(iter(region_candidates))
+    # In V6 the real nationwide observation established ITM_ID=100001
+    # as the index item, while CLS_ID=500001 represented nationwide.
+    index_code='100001'
+    print('지역 분류코드(CLS_ID) 후보:',region_code)
+    print('지수 항목코드(ITM_ID) 후보:',index_code)
+    print('2단계: 올바른 필드로 최소 관측값 조회 (Supabase 저장하지 않음)')
+    series=read_region_index(region_code,index_code)
+    if not series:
+        print('R-ONE 대전 서구 지수 미검증: 정확한 지역/품목 조합 또는 자료 기간 추가 확인 필요')
+        return 2
+    print('확인된 관측값 (최대 5건):')
+    for row in series[-5:]:
+        print('  ',row['month'],'지수',row['index'],
+              '지역',row['region_name'],'코드',row['cls_id'],'항목',row['item_id'],'단위',row['unit'])
+    print('※ 읽기 전용 확인 성공. 지수 기준연도·연속성·최근월은 본연동 전에 별도 검증')
+    return 0
 
 if __name__ == '__main__':
     try:sys.exit(run())
     except Exception as exc:
-        # Never log URL, body, or API key.
+        # Never log URL, response body, or private API key.
         print('R-ONE 검증 중단:',str(exc)[:150],file=sys.stderr)
         sys.exit(1)
