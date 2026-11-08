@@ -98,20 +98,38 @@ def fetch_xml_rows(endpoint: str, params: dict[str, str | int], opener=None) -> 
         raise ValueError('R-ONE API 연결 실패') from None
     except (ET.ParseError,UnicodeError):
         raise ValueError('R-ONE XML 응답 파싱 실패') from None
-    if root.tag != endpoint.split('.')[0]:
-        raise ValueError('R-ONE 응답 서비스명 불일치')
-    result=root.find('RESULT')
-    if result is None: result=root.find('./head/RESULT')
-    if result is not None:
-        code=str(result.findtext('CODE','')).strip()
-        if code == 'INFO-200':
-            return [],0
-        if code and code != 'INFO-000':
-            safe=code if re.fullmatch(r'(?:INFO|ERROR)-\d{3}|\d{3}',code) else 'UNKNOWN'
-            raise ValueError('R-ONE API 상태 '+safe+' (인증/조회조건 검토, 키 미출력)')
-    rows=[{el.tag:(el.text or '').strip() for el in row} for row in root.findall('row')]
-    # some response versions put rows under a wrapper
-    if not rows: rows=[{el.tag:(el.text or '').strip() for el in row} for row in root.findall('.//row')]
+    # R-ONE may return a different XML root when there are no observations.
+    # Inspect the short provider result code BEFORE checking the service root.
+    # Never print provider error bodies or URLs: some responses may echo KEY.
+    def tag_name(node):
+        return node.tag.rsplit('}', 1)[-1] if isinstance(node.tag, str) else ''
+
+    code = ''
+    for node in root.iter():
+        if tag_name(node).lower() in {'code', 'returnreasoncode'} and node.text:
+            candidate = node.text.strip()
+            if re.fullmatch(r'(?:INFO|ERROR)-\d{3}|\d{3}', candidate):
+                code = candidate
+                break
+    if not code:
+        # Some provider error envelopes put INFO-200 in direct text, not CODE.
+        prefix = ' '.join((x or '').strip() for x in root.itertext())[:1000]
+        match = re.search(r'\b(?:INFO|ERROR)-\d{3}\b', prefix)
+        if match:
+            code = match.group(0)
+    if code == 'INFO-200':
+        return [], 0
+    if code and code not in {'INFO-000', '200'}:
+        raise ValueError('R-ONE API 결과코드 '+code+' (요청조건/통계 제공시점 확인)')
+
+    expected = endpoint.split('.')[0]
+    if tag_name(root) != expected:
+        safe_root = tag_name(root)[:48]
+        safe_root = re.sub(r'[^a-zA-Z0-9_]', '', safe_root) or 'unknown'
+        raise ValueError('R-ONE 응답형식 불일치 ('+safe_root+'); API 오류코드/조회조건 점검 필요')
+    rows=[{tag_name(el):(el.text or '').strip() for el in row} for row in root.findall('row')]
+    if not rows:
+        rows=[{tag_name(el):(el.text or '').strip() for el in row} for row in root.findall('.//row')]
     total_txt=root.findtext('./head/list_total_count')
     total=int(total_txt) if (total_txt or '').isdigit() else None
     return rows,total
@@ -120,7 +138,7 @@ def fetch_xml_rows(endpoint: str, params: dict[str, str | int], opener=None) -> 
 def locate_months():
     now=datetime.now()
     total=now.year*12+(now.month-1)
-    return [f'{(total-i)//12:04d}{(total-i)%12+1:02d}' for i in (1,2,3)]
+    return [f'{(total-i)//12:04d}{(total-i)%12+1:02d}' for i in (1,2,3,4,5,6)]
 
 
 def choose_table(rows):
@@ -173,8 +191,23 @@ def is_daejeon_seogu(row: dict)->bool:
     fullname = norm_name(row.get('CLS_FULLNM'))
     group = norm_name(row.get('GRP_NM'))
     name = norm_name(row.get('CLS_NM'))
-    # Reject ambiguous bare "서구"; there is also Gwangju, Incheon, Daegu, Busan.
-    return ('대전' in fullname and '서구' in fullname) or (name == '서구' and '대전' in group) or (name.startswith('대전') and '서구' in name)
+    item_full = norm_name(row.get('ITM_FULLNM'))
+    # In this table, the REGION is an ITM_ID (e.g. 510050), not necessarily CLS_ID.
+    # Reject ambiguous bare '서구'; match Daejeon from official metadata.
+    return (('대전' in fullname and '서구' in fullname)
+            or (name == '서구' and '대전' in group)
+            or (name.startswith('대전') and '서구' in name)
+            or ('대전' in item_full and '서구' in item_full))
+
+
+def verified_region_item_ids(itemrows: list[dict]) -> set[str]:
+    confirmed = set()
+    for row in itemrows:
+        full = norm_name(row.get('ITM_FULLNM'))
+        item_id = str(row.get('ITM_ID', '')).strip()
+        if '대전' in full and '서구' in full and item_id.isdigit():
+            confirmed.add(item_id)
+    return confirmed
 
 
 def month_of(row:dict):
@@ -188,31 +221,35 @@ def month_of(row:dict):
     return None
 
 
-def candidate_rows(rows:list[dict])->list[dict]:
+def candidate_rows(rows:list[dict], verified_itm_ids:set[str]|None=None)->list[dict]:
     valid=[]
     for row in rows:
-        if not is_daejeon_seogu(row): continue
-        # A specific table & monthly period are verified in the API request.
-        # Do NOT assume which item is the correct index based on just region.
+        item_id=str(row.get('ITM_ID','')).strip()
+        # Only trust an ITM_ID if it was established from the official metadata.
+        # Region can also appear as a CLS hierarchy on other tables.
+        proven_by_metadata=bool(verified_itm_ids and item_id in verified_itm_ids)
+        if not (proven_by_metadata or is_daejeon_seogu(row)): continue
+        table_id=str(row.get('STATBL_ID','')).strip()
+        if table_id and table_id!=TABLE: continue
         month=month_of(row)
         if not month:continue
         try: value=float(str(row['DTA_VAL']).replace(',',''))
         except (TypeError,ValueError,KeyError):continue
-        if not math.isfinite(value):continue
-        item_id=str(row.get('ITM_ID','')).strip()
+        if not math.isfinite(value) or value <= 0:continue
         cls_id=str(row.get('CLS_ID','')).strip()
-        if not (item_id.isdigit() and cls_id.isdigit()):continue
-        valid.append({'month':month,'value':value,'cls_id':cls_id,'itm_id':item_id,
-                      'region':str(row.get('CLS_FULLNM') or row.get('CLS_NM') or ''),
-                      'item':str(row.get('ITM_NM') or ''),
+        if not item_id.isdigit():continue
+        if cls_id and not cls_id.isdigit():continue
+        valid.append({'month':month,'value':value,'cls_id':cls_id or '미확인', 'itm_id':item_id,
+                      'region':'대전광역시 서구' if proven_by_metadata else str(row.get('CLS_FULLNM') or row.get('CLS_NM') or ''),
+                      'item':str(row.get('CLS_NM') or row.get('ITM_NM') or ''),
                       'unit':str(row.get('UI_NM') or ''),
                       'group':str(row.get('GRP_NM') or '')})
     return valid
 
 
-def summarize(rows:list[dict]):
+def summarize(rows:list[dict],verified_itm_ids:set[str]|None=None):
     groups=defaultdict(list)
-    for row in candidate_rows(rows):
+    for row in candidate_rows(rows,verified_itm_ids):
         groups[(row['cls_id'],row['itm_id'])].append(row)
     summary=[]
     for (cls_id,itm_id),seq in sorted(groups.items()):
@@ -229,7 +266,7 @@ def summarize(rows:list[dict]):
 def run():
     if not os.getenv('RONE_API_KEY','').strip():
         raise ValueError('RONE_API_KEY GitHub Secret 설정을 확인해 주세요')
-    print('IFPK V48: R-ONE 대전 서구 월별 아파트 매매가격지수 안전검증 V3')
+    print('IFPK V48: R-ONE 대전 서구 월별 아파트 매매가격지수 안전검증 V4')
     print('1단계: 서비스 통계표 전체목록 조회 (필터 없음, XML)')
     # SttsApiTbl supports STATBL_ID filter but does NOT accept DTACYCLE_CD
     # as a documented filter. Enumerating prevents INFO-200 on overfiltering.
@@ -242,36 +279,42 @@ def run():
     print('공식 통계표 목록:',len(tables),'건')
     item=choose_table(tables)
     print('검증 통계표:',TABLE,' / ',item.get('STATBL_NM',''),'/ 주기',item.get('DTACYCLE_CD',''))
-    print('2단계: 통계항목 목록 조회 (확인용)')
-    try:
-        itemrows,_=fetch_xml_rows('SttsApiTblItm.do', {'STATBL_ID':TABLE,'pIndex':1,'pSize':1000})
-        print('항목 목록:',len(itemrows),'건')
-        wanted=[r for r in itemrows if '서구' in str(r.get('ITM_FULLNM','')+' '+r.get('ITM_NM','')) and '대전' in str(r.get('ITM_FULLNM',''))]
-        for r in wanted[:6]:
-            print('항목 후보:',r.get('ITM_ID',''),r.get('ITM_FULLNM',''),r.get('ITM_NM',''))
-    except ValueError as exc:
-        print('항목 목록은 추가 점검 필요:',str(exc)[:120])
+    print('2단계: 통계항목 목록 조회 (대전 서구 ITM_ID 확인)')
+    itemrows,_=fetch_xml_rows('SttsApiTblItm.do', {'STATBL_ID':TABLE,'pIndex':1,'pSize':1000})
+    print('항목 목록:',len(itemrows),'건')
+    valid_ids = verified_region_item_ids(itemrows)
+    print('대전 서구 공식 항목 후보:', ', '.join(sorted(valid_ids)) if valid_ids else '없음')
+    if not valid_ids:
+        raise ValueError('공식 항목 목록에서 대전광역시 서구 ITM_ID 검증 실패')
     print('3단계: 최근 월별 데이터에서 대전 서구 관측행 식별 (DB 저장 없음)')
     for month in locate_months():
         collected=[]
         total=None
         for page in range(1,MAX_PAGES+1):
-            batch,all_count=fetch_xml_rows('SttsApiTblData.do',{'STATBL_ID':TABLE,'DTACYCLE_CD':'MM',
-                'WRTTIME_IDTFR_ID':month,'pIndex':page,'pSize':1000})
+            params={'STATBL_ID':TABLE,'DTACYCLE_CD':'MM',
+                    'WRTTIME_IDTFR_ID':month,'pIndex':page,'pSize':1000}
+            if len(valid_ids)==1:
+                params['ITM_ID']=next(iter(valid_ids))
+            batch,all_count=fetch_xml_rows('SttsApiTblData.do',params)
             collected.extend(batch)
             if total is None:total=all_count
             if not batch or len(batch)<1000 or (total is not None and page*1000>=total):break
         print('통계월',month,'관측행:',len(collected),'건')
-        candidates=summarize(collected)
+        if not collected:
+            # INFO-200 may mean the monthly release is not yet available.
+            print('  해당 통계월 미공표 또는 조회 결과 없음. 이전 월 확인')
+            continue
+        candidates=summarize(collected,valid_ids)
         if candidates:
-            print('대전 서구 후보 - 공식 원문에서 분류코드/항목코드 확인:')
+            print('대전 서구 후보 - 공식 원문 분류코드/항목코드:')
             for c in candidates[:8]:print(json.dumps(c,ensure_ascii=False))
-            if len(candidates)==1 and ('지수' in candidates[0]['item'] or '매매' in candidates[0]['item']):
-                print('단일 후보 검증: 조회 성공. 실제 적용 전 시계열·기준년도 추가검증 필요.')
+            if len(candidates)==1 and candidates[0]['itm_id'] in valid_ids and candidates[0]['cls_id']!='미확인':
+                print('통계원장 조회 성공. 통계명·단위·기준년도와 장기 시계열은 별도 검증 후 수집 활성화.')
                 return 0
-            print('후보 확인: 항목 명칭을 수작업 검토해야 하므로 적용 보류.')
+            print('후보 조회됨: 분류 항목/단위를 추가 검증해야 하므로 적용 보류.')
             return 2
-    print('최근 3개 통계월에서 대전 서구 지수 미확인. 조회조건/분류 정보 추가검토 필요.')
+        print('해당 월에 지역 필터와 일치하는 수치 없음. 다음 월 조회')
+    print('최근 6개 통계월에서 대전 서구 지수 미확인. 조회조건/분류 정보 추가검토 필요.')
     print('기존 CPI/금리·Supabase/웹사이트 값은 변경하지 않았습니다.')
     return 2
 

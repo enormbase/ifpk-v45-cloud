@@ -80,11 +80,49 @@ class ROneProbeRunTests(unittest.TestCase):
    calls.append((endpoint,params))
    if endpoint=='SttsApiTbl.do':
     return [{'STATBL_ID':'A_2024_00045','STATBL_NM':'(월) 매매가격지수_아파트','DTACYCLE_CD':'MM'}],1
-   if endpoint=='SttsApiTblItm.do': return [],0
-   return [{'CLS_FULLNM':'대전광역시>서구','CLS_NM':'서구','CLS_ID':'510123','ITM_ID':'100001','ITM_NM':'매매가격지수', 'UI_NM':'2026.1=100', 'WRTTIME_IDTFR_ID':params['WRTTIME_IDTFR_ID'],'DTA_VAL':'100.23'}],1
+   if endpoint=='SttsApiTblItm.do': return [{'ITM_ID':'510050','ITM_FULLNM':'대전광역시 서구', 'ITM_NM':'서구'}],1
+   return [{'CLS_FULLNM':'','CLS_NM':'매매가격지수','CLS_ID':'510123','ITM_ID':'510050','ITM_NM':'서구', 'UI_NM':'2026.1=100', 'WRTTIME_IDTFR_ID':params['WRTTIME_IDTFR_ID'],'DTA_VAL':'100.23'}],1
   with patch.dict('os.environ',{'RONE_API_KEY':'not-for-logs'}):
    with patch('rone_probe.fetch_xml_rows',side_effect=fake_request):
     self.assertEqual(run(),0)
   self.assertEqual(calls[0][1],{'pIndex':1,'pSize':1000})
   self.assertEqual(calls[-1][1]['DTACYCLE_CD'],'MM')
   self.assertRegex(calls[-1][1]['WRTTIME_IDTFR_ID'],r'^\d{6}$')
+  self.assertEqual(calls[-1][1]['ITM_ID'],'510050')
+
+
+class V4ErrorEnvelopeTests(unittest.TestCase):
+ def setUp(self):
+  from unittest.mock import patch
+  self.env=patch.dict('os.environ',{'RONE_API_KEY':'SPECIAL-SHARED-SECRET'})
+  self.env.start()
+ def tearDown(self): self.env.stop()
+ def fetch(self,xml):
+  from rone_probe import fetch_xml_rows
+  class Response:
+   def __enter__(self): return self
+   def __exit__(self,*args): return False
+   def read(self,*args): return xml.encode()
+  return fetch_xml_rows('SttsApiTblData.do',{'STATBL_ID':'A_2024_00045','DTACYCLE_CD':'MM','WRTTIME_IDTFR_ID':'202610'},opener=lambda req,timeout:Response())
+ def test_info200_separate_result_root(self):
+  self.assertEqual(self.fetch('<RESULT><CODE>INFO-200</CODE><MESSAGE>no data</MESSAGE></RESULT>'),([],0))
+ def test_error_result_root_strips_secrets(self):
+  with self.assertRaisesRegex(ValueError,'ERROR-300') as context:
+   self.fetch('<RESULT><CODE>ERROR-300</CODE><MESSAGE>SPECIAL-SHARED-SECRET</MESSAGE></RESULT>')
+  self.assertNotIn('SPECIAL-SHARED-SECRET',str(context.exception))
+ def test_unknown_root_name_reports_only_safe_tag(self):
+  with self.assertRaisesRegex(ValueError,'UnexpectedService'):
+   self.fetch('<UnexpectedService><status>not found</status></UnexpectedService>')
+ def test_monthly_valid_response(self):
+  rows,total=self.fetch('<SttsApiTblData><head><list_total_count>1</list_total_count></head><row><ITM_ID>510050</ITM_ID><WRTTIME_IDTFR_ID>202609</WRTTIME_IDTFR_ID><CLS_ID>10001</CLS_ID><DTA_VAL>96.58</DTA_VAL></row></SttsApiTblData>')
+  self.assertEqual(rows[0]['DTA_VAL'],'96.58')
+  self.assertEqual(total,1)
+ def test_itm_id_validated_in_official_metadata(self):
+  from rone_probe import verified_region_item_ids,candidate_rows
+  metadata=[{'ITM_ID':'510050','ITM_FULLNM':'대전광역시 서구'}, {'ITM_ID':'510060','ITM_FULLNM':'부산광역시 서구'}]
+  ids=verified_region_item_ids(metadata)
+  self.assertEqual(ids,{'510050'})
+  rows=[{'ITM_ID':'510050','CLS_NM':'매매가격지수','CLS_ID':'10000','WRTTIME_IDTFR_ID':'202609','DTA_VAL':'107.0'}, {'ITM_ID':'510060','CLS_NM':'매매가격지수','CLS_ID':'10000','WRTTIME_IDTFR_ID':'202609','DTA_VAL':'99.0'}]
+  selected=candidate_rows(rows,ids)
+  self.assertEqual(len(selected),1)
+  self.assertEqual(selected[0]['region'],'대전광역시 서구')
