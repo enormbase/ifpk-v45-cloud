@@ -22,6 +22,7 @@ from statistics import mean
 from urllib.parse import urlsplit
 
 from ifpk_collector import INDICATORS, get_kosis, get_ecos, load_ecos_series, contiguous_values, valid_month
+from cpi_special import collect_special_cpis
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -188,6 +189,14 @@ def calculate_estimates(records):
                 entry['sourceCode']=seq[-1].get('sourceCode','')
                 entry['lastRetrievedAt']=seq[-1].get('retrievedAt','')
                 entry['formula']='60개월 평균 × 0.70 + 120개월 평균 × 0.30'
+            elif kind in ('ma3', 'ma12'):
+                entry['value']=mean(values)
+                entry['lastObservedIndex']=seq[-1]['value']
+                entry['rollingMonths']=size
+                entry['windowStart']=seq[-size]['date']
+                entry['sourceCode']=seq[-1].get('sourceCode', '')
+                entry['lastRetrievedAt']=seq[-1].get('retrievedAt', '')
+                entry['formula']=f'최근 {size}개월의 월별 원지수 산술평균'
             else:
                 entry['value']=mean(values)
         output.append(entry)
@@ -236,7 +245,18 @@ def gather_official_sources():
     if selected and not ecos_key:
         raise RuntimeError('ECOS 수집계열이 활성화됐지만 ECOS_API_KEY가 없습니다')
     for series in selected:
+        # CPI_CAR/TRAVEL are V47's dedicated, metadata-verified items.
+        if series['id'] in ('CPI_CAR', 'CPI_TRAVEL'):
+            raise ValueError('품목별 CPI는 ecos_series.json에서 켜지 말고 V47 공식 항목 조회로 수집하세요')
         tasks.append((series['id'],get_ecos(ecos_key,series,start='201601')))
+    try:
+        tasks.extend(collect_special_cpis(ecos_key))
+    except (ValueError, RuntimeError) as exc:
+        # Noncritical CPI indices are fail-closed, but must not break proven
+        # general CPI and bank-rate publishing. Publish explicit failed runs.
+        reason = '품목별 CPI 공식 코드 확인 보류: ' + str(exc)[:115]
+        for indicator in ('CPI_CAR', 'CPI_TRAVEL'):
+            tasks.append((indicator, {'error': reason}))
     return tasks
 
 
@@ -246,6 +266,10 @@ def execute_cloud(store, tasks, timestamp=None):
     outcome=[]
     for indicator, records in tasks:
         started=utc_now()
+        if isinstance(records, dict) and 'error' in records:
+            store.save_run(indicator,'failed',message=records['error'],started_at=started)
+            outcome.append({'indicator':indicator,'status':'failed','reason':records['error']})
+            continue
         seen=set();new=[];ins=rev=0
         for r in records:
             if r['id']!=indicator: raise ValueError('지표 ID 불일치')
