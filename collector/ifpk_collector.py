@@ -151,7 +151,7 @@ def parse_ecos(response, series: dict) -> list[dict]:
     for raw in box['row']:
         if str(raw.get('STAT_CODE')) != series['stat_code']:
             raise ValueError('ECOS 통계표 코드 불일치')
-        if str(raw.get('CYCLE')) != 'M':
+        if raw.get('CYCLE') not in (None, '', 'M'):
             raise ValueError('ECOS 월별 계열 아님')
         if any(str(raw.get(k, '')) != v for k, v in wanted.items()):
             raise ValueError('ECOS 응답에 다른 품목 계열이 섞여 있습니다')
