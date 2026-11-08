@@ -72,24 +72,22 @@ class ROneResultDiagnosticsTests(unittest.TestCase):
 if __name__=='__main__':unittest.main()
 
 class ROneProbeRunTests(unittest.TestCase):
- def test_run_probes_single_month_not_unspecified_annual(self):
+ def test_v6_run_is_bounded_and_leaves_database_untouched(self):
   from unittest.mock import patch
   from rone_probe import run
   calls=[]
-  def fake_request(endpoint,params):
+  def fake(endpoint, params):
    calls.append((endpoint,params))
-   if endpoint=='SttsApiTbl.do':
-    return [{'STATBL_ID':'A_2024_00045','STATBL_NM':'(월) 매매가격지수_아파트','DTACYCLE_CD':'MM'}],1
-   if endpoint=='SttsApiTblItm.do': return [{'ITM_ID':'510050','ITM_FULLNM':'대전광역시 서구', 'ITM_NM':'서구'}],1
-   return [{'CLS_FULLNM':'','CLS_NM':'매매가격지수','CLS_ID':'510123','ITM_ID':'510050','ITM_NM':'서구', 'UI_NM':'2026.1=100', 'WRTTIME_IDTFR_ID':params['WRTTIME_IDTFR_ID'],'DTA_VAL':'100.23'}],1
-  with patch.dict('os.environ',{'RONE_API_KEY':'not-for-logs'}):
-   with patch('rone_probe.fetch_xml_rows',side_effect=fake_request):
-    self.assertEqual(run(),0)
-  self.assertEqual(calls[0][1],{'pIndex':1,'pSize':1000})
-  self.assertEqual(calls[-1][1]['DTACYCLE_CD'],'MM')
-  self.assertRegex(calls[-1][1]['WRTTIME_IDTFR_ID'],r'^\d{6}$')
-  self.assertEqual(calls[-1][1]['ITM_ID'],'510050')
-
+   if endpoint=='SttsApiTbl.do':return [{'STATBL_ID':'A_2024_00045','STATBL_NM':'(월) 매매가격지수_아파트','DTACYCLE_CD':'MM'}],1
+   if endpoint=='SttsApiTblItm.do':return [{'ITM_ID':'510050','ITM_FULLNM':'대전광역시 서구'}],1
+   return [],0
+  with patch.dict('os.environ',{'RONE_API_KEY':'never-log-this'}):
+   with patch('rone_probe.fetch_xml_rows', side_effect=fake):
+    with patch('rone_probe.time.sleep'):
+     self.assertEqual(run(),2)
+  self.assertEqual(len(calls),6)  # two metadata plus <=4 small probes
+  self.assertEqual(calls[2][1]['WRTTIME_IDTFR_ID'],'202409')
+  self.assertEqual(calls[2][1]['pSize'],10)
 
 class V4ErrorEnvelopeTests(unittest.TestCase):
  def setUp(self):
@@ -128,37 +126,39 @@ class V4ErrorEnvelopeTests(unittest.TestCase):
   self.assertEqual(selected[0]['region'],'대전광역시 서구')
 
 
-class V5DiagnosticMatrixTests(unittest.TestCase):
-    def test_diagnostic_filters_and_no_key_exposure(self):
-        from unittest.mock import patch
-        from rone_probe import diagnose_empty_months
-        import io
-        from contextlib import redirect_stdout
-        calls=[]
-        def fake(endpoint, params):
-            calls.append((endpoint,params))
-            # The only populated condition is the wide time-range probe.
-            if params.get('START_WRTTIME')=='2025' and 'ITM_ID' not in params:
-                return [{'ITM_ID':'91000','ITM_NM':'다른 지역',
-                         'CLS_ID':'40001','CLS_NM':'다른 분류',
-                         'WRTTIME_IDTFR_ID':'202509','UI_NM':'지수'}],42
-            return [],0
-        with patch('rone_probe.fetch_xml_rows', side_effect=fake):
-            buf=io.StringIO()
-            with redirect_stdout(buf): out=diagnose_empty_months({'510050'})
-        self.assertEqual(len(calls),6)
-        self.assertEqual(len(out),6)
-        self.assertEqual(out[1]['rows'],1)
-        self.assertEqual(calls[4][1]['ITM_ID'],'510050')
-        self.assertEqual(calls[4][1]['START_WRTTIME'],'2025')
-        self.assertNotIn('DTA_VAL',buf.getvalue())
-        self.assertNotIn('RONE_API_KEY',buf.getvalue())
+class V6DiagnosticTests(unittest.TestCase):
+ def test_only_four_small_calls(self):
+  from rone_probe import diagnose_small_matrix
+  calls=[]
+  def fake(endpoint, params):
+   calls.append((endpoint, params))
+   if 'ITM_ID' not in params:
+    return [{'ITM_ID':'987','WRTTIME_IDTFR_ID':'202409','CLS_ID':'1'}],12
+   return [],0
+  out=diagnose_small_matrix({'510050'},fetch=fake,pause=lambda _:None)
+  self.assertEqual(len(out),4)
+  self.assertEqual(len(calls),4)
+  self.assertTrue(all(q['pSize']==10 for _,q in calls))
+  self.assertEqual(out[1]['rows'],1)
 
-    def test_diagnostic_handles_info200(self):
-        from unittest.mock import patch
-        from rone_probe import diagnose_empty_months
-        import io
-        from contextlib import redirect_stdout
-        with patch('rone_probe.fetch_xml_rows',return_value=([],0)):
-            with redirect_stdout(io.StringIO()):out=diagnose_empty_months({'510050'})
-        self.assertEqual([x['rows'] for x in out],[0]*6)
+ def test_remote_disconnect_is_caught_without_credential(self):
+  from unittest.mock import patch
+  from rone_probe import fetch_xml_rows
+  import http.client
+  def drop(req,timeout):raise http.client.RemoteDisconnected('Remote end closed connection without response')
+  with patch.dict('os.environ',{'RONE_API_KEY':'PRIVATE-RONE-KEY'}):
+   with self.assertRaisesRegex(ValueError, '연결이 응답 없이 종료됨') as ctx:
+    fetch_xml_rows('SttsApiTblData.do',{},opener=drop)
+  self.assertNotIn('PRIVATE-RONE-KEY',str(ctx.exception))
+
+ def test_disconnect_stops_further_calls(self):
+  from rone_probe import diagnose_small_matrix
+  calls=[]
+  def fake(endpoint,params):
+   calls.append(params)
+   raise ValueError('R-ONE 서버 연결이 응답 없이 종료됨 (일시적 장애/요청제한 가능)')
+  out=diagnose_small_matrix({'510050'},fetch=fake,pause=lambda _:None)
+  self.assertEqual(len(calls),1)
+  self.assertEqual(len(out),1)
+
+ if __name__=='__main__':unittest.main()

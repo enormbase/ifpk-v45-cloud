@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import json
+import http.client
+import time
 import math
 import os
 import re
@@ -94,6 +96,8 @@ def fetch_xml_rows(endpoint: str, params: dict[str, str | int], opener=None) -> 
         root=ET.fromstring(raw)
     except urllib.error.HTTPError as exc:
         raise ValueError('R-ONE HTTP 오류 '+str(exc.code)) from None
+    except (http.client.RemoteDisconnected, ConnectionResetError, TimeoutError, BrokenPipeError):
+        raise ValueError('R-ONE 서버 연결이 응답 없이 종료됨 (일시적 장애/요청제한 가능)') from None
     except urllib.error.URLError:
         raise ValueError('R-ONE API 연결 실패') from None
     except (ET.ParseError,UnicodeError):
@@ -263,55 +267,56 @@ def summarize(rows:list[dict],verified_itm_ids:set[str]|None=None):
     return summary
 
 
-def diagnose_empty_months(valid_ids: set[str]) -> list[dict]:
-    """Bounded, READ-ONLY diagnostic matrix using official query parameter names.
+def diagnose_small_matrix(valid_ids: set[str], fetch=None, pause=None) -> list[dict]:
+    """At most FOUR small, read-only calls; stop on early remote disconnect.
 
-    Printed metadata contains NO API key or URLs. The provider may supply rows
-    ordered oldest first; this diagnostic therefore reports returned dates,
-    not an invented notion of 'latest'. The result MUST NOT enter production DB.
+    The same table is tested with/without the region filter, on an older month
+    and with a broad period. This is a DIAGNOSTIC, never an asserted official
+    index; values are intentionally withheld until region+series are proven.
     """
-    print('4단계: 빈 결과 원인 진단 (읽기전용, 조건 6가지 비교)')
-    base={'STATBL_ID':TABLE, 'DTACYCLE_CD':'MM', 'pIndex':1,'pSize':25}
+    if fetch is None: fetch=fetch_xml_rows
+    if pause is None: pause=time.sleep
+    print('4단계: 최소 요청 필터 진단 (4개 이하, 읽기전용)')
     itm=sorted(valid_ids)[0]
+    basic={'STATBL_ID':TABLE,'DTACYCLE_CD':'MM','pIndex':1,'pSize':10}
     cases=[
-        ('A 표/월주기만 조회', {}),
-        ('B 2025년 이후 기간조회', {'START_WRTTIME':'2025'}),
-        ('C 2026-09 월조회만', {'WRTTIME_IDTFR_ID':'202609'}),
-        ('D 대전 서구 ITM만', {'ITM_ID':itm}),
-        ('E 대전 서구 + 기간조회', {'ITM_ID':itm,'START_WRTTIME':'2025'}),
-        ('F 2024-09 월조회만', {'WRTTIME_IDTFR_ID':'202409'}),
+        ('A 과거 2024-09 + 대전서구 코드', {'WRTTIME_IDTFR_ID':'202409','ITM_ID':itm}),
+        ('B 과거 2024-09 + 지역코드 없음', {'WRTTIME_IDTFR_ID':'202409'}),
+        ('C 대전서구 코드만 / 시점 없음', {'ITM_ID':itm}),
+        ('D 대전서구 코드 + 과거 기간', {'ITM_ID':itm,'START_WRTTIME':'202401','END_WRTTIME':'202412'}),
     ]
     results=[]
-    for label,filters in cases:
+    for label, extra in cases:
+        # Be polite to the official service; avoid many consecutive requests.
+        pause(1.5)
         try:
-            rows,total=fetch_xml_rows('SttsApiTblData.do', {**base,**filters})
-            result={'case':label,'rows':len(rows),'total':total}
-            print('진단',label,':',len(rows),'행 / 전체',total if total is not None else '미제공')
-            if rows:
-                # No actual DTA_VAL is printed: never mistake an unverified
-                # national/other series for the local apartment index.
-                for row in rows[:2]:
-                    fields={k:str(row.get(k,''))[:65] for k in (
-                        'WRTTIME_IDTFR_ID','CLS_ID','CLS_NM','ITM_ID','ITM_NM',
-                        'ITM_FULLNM','UI_NM')}
-                    print('  응답 메타:',json.dumps(fields,ensure_ascii=False))
-                result['first_month']=str(rows[0].get('WRTTIME_IDTFR_ID',''))
-                result['itm_ids']=sorted({str(r.get('ITM_ID','')) for r in rows if r.get('ITM_ID')})[:5]
-            results.append(result)
+            rows,total=fetch('SttsApiTblData.do',{**basic,**extra})
         except ValueError as exc:
-            print('진단',label,': 오류:',str(exc)[:135])
-            results.append({'case':label,'error':str(exc)[:135]})
-    print('진단 완료. 분류/시간 조회 조건을 위 결과로 확인해야 하며, DB·웹사이트는 갱신하지 않음.')
+            msg=str(exc)[:120]  # fetch_xml_rows sanitizes URLs/KEY
+            print('진단',label,':',msg)
+            results.append({'case':label,'error':msg})
+            if '연결이 응답 없이 종료됨' in msg:
+                print('연결이 갑자기 끊겼으므로 추가 호출은 중단합니다. 재시도 반복은 권장하지 않음.')
+                break
+            continue
+        print('진단',label,':',len(rows),'건 / 전체',total if total is not None else '미제공')
+        item_ids=sorted({str(row.get('ITM_ID','')) for row in rows if row.get('ITM_ID')})[:5]
+        if rows:
+            row=rows[0]
+            # Metadata only: no financial index is reported until validated.
+            print('  응답 예시 메타:',json.dumps({key:str(row.get(key,''))[:65] for key in (
+                'WRTTIME_IDTFR_ID','CLS_ID','CLS_NM','ITM_ID','ITM_NM','ITM_FULLNM','UI_NM')},ensure_ascii=False))
+        results.append({'case':label,'rows':len(rows),'total':total,'itm_ids':item_ids})
+        # If B (without ITM_ID) has data but A does not, suspect item filter.
+        # If C works, suspect month filter. No inferred series is saved.
     return results
 
 
 def run():
     if not os.getenv('RONE_API_KEY','').strip():
         raise ValueError('RONE_API_KEY GitHub Secret 설정을 확인해 주세요')
-    print('IFPK V48: R-ONE 대전 서구 아파트 매매가격지수 진단검증 V5')
-    print('1단계: 서비스 통계표 전체목록 조회 (필터 없음, XML)')
-    # SttsApiTbl supports STATBL_ID filter but does NOT accept DTACYCLE_CD
-    # as a documented filter. Enumerating prevents INFO-200 on overfiltering.
+    print('IFPK V48: R-ONE 대전 서구 아파트 매매가격지수 안전진단 V6')
+    print('1단계: 공식 통계표 목록 조회')
     tables=[]
     for page in range(1,3):
         batch,total=fetch_xml_rows('SttsApiTbl.do',{'pIndex':page,'pSize':1000})
@@ -320,51 +325,24 @@ def run():
             break
     print('공식 통계표 목록:',len(tables),'건')
     item=choose_table(tables)
-    print('검증 통계표:',TABLE,' / ',item.get('STATBL_NM',''),'/ 주기',item.get('DTACYCLE_CD',''))
-    print('2단계: 통계항목 목록 조회 (대전 서구 ITM_ID 확인)')
-    itemrows,_=fetch_xml_rows('SttsApiTblItm.do', {'STATBL_ID':TABLE,'pIndex':1,'pSize':1000})
-    print('항목 목록:',len(itemrows),'건')
-    valid_ids = verified_region_item_ids(itemrows)
-    print('대전 서구 공식 항목 후보:', ', '.join(sorted(valid_ids)) if valid_ids else '없음')
-    if not valid_ids:
-        raise ValueError('공식 항목 목록에서 대전광역시 서구 ITM_ID 검증 실패')
-    print('3단계: 최근 월별 데이터에서 대전 서구 관측행 식별 (DB 저장 없음)')
-    for month in locate_months():
-        collected=[]
-        total=None
-        for page in range(1,MAX_PAGES+1):
-            params={'STATBL_ID':TABLE,'DTACYCLE_CD':'MM',
-                    'WRTTIME_IDTFR_ID':month,'pIndex':page,'pSize':1000}
-            if len(valid_ids)==1:
-                params['ITM_ID']=next(iter(valid_ids))
-            batch,all_count=fetch_xml_rows('SttsApiTblData.do',params)
-            collected.extend(batch)
-            if total is None:total=all_count
-            if not batch or len(batch)<1000 or (total is not None and page*1000>=total):break
-        print('통계월',month,'관측행:',len(collected),'건')
-        if not collected:
-            # INFO-200 may mean the monthly release is not yet available.
-            print('  해당 통계월 미공표 또는 조회 결과 없음. 이전 월 확인')
-            continue
-        candidates=summarize(collected,valid_ids)
-        if candidates:
-            print('대전 서구 후보 - 공식 원문 분류코드/항목코드:')
-            for c in candidates[:8]:print(json.dumps(c,ensure_ascii=False))
-            if len(candidates)==1 and candidates[0]['itm_id'] in valid_ids and candidates[0]['cls_id']!='미확인':
-                print('통계원장 조회 성공. 통계명·단위·기준년도와 장기 시계열은 별도 검증 후 수집 활성화.')
-                return 0
-            print('후보 조회됨: 분류 항목/단위를 추가 검증해야 하므로 적용 보류.')
-            return 2
-        print('해당 월에 지역 필터와 일치하는 수치 없음. 다음 월 조회')
-    print('최근 6개 통계월에서 대전 서구 지수 미확인. 필터별 진단 시작.')
-    diagnose_empty_months(valid_ids)
-    print('기존 CPI/금리·Supabase/웹사이트 값은 변경하지 않았습니다.')
+    print('검증 통계표:',TABLE,'/',item.get('STATBL_NM',''),'/ 주기',item.get('DTACYCLE_CD',''))
+    print('2단계: 공식 항목 목록 및 대전 서구 코드 확인')
+    items,_=fetch_xml_rows('SttsApiTblItm.do',{'STATBL_ID':TABLE,'pIndex':1,'pSize':1000})
+    valid_ids=verified_region_item_ids(items)
+    print('항목 목록:',len(items),'건 / 대전서구 공식 항목 후보:',', '.join(sorted(valid_ids)) or '없음')
+    if not valid_ids: raise ValueError('공식 항목 목록에서 대전광역시 서구 코드 확인 불가')
+    print('3단계: 과도한 6개월 연속 조회 생략 (서버 연결 종료 방지)')
+    results=diagnose_small_matrix(valid_ids)
+    any_verified=False
+    # Do not assert a match without a published observation and official IDs.
+    # Validation of historical series and index base remains for a later step.
+    print('4단계 진단 요청 결과:',len(results),'건')
+    print('R-ONE 수치 검증·DB 저장은 보류. 기존 CPI/금리 및 공개사이트 유지.')
     return 2
 
-
-if __name__=='__main__':
+if __name__ == '__main__':
     try:sys.exit(run())
     except Exception as exc:
-        # Never print URL, request or HTTP error body (could contain secrets).
-        print('R-ONE 검증 실패:',str(exc)[:160],file=sys.stderr)
+        # Never log URL, body, or API key.
+        print('R-ONE 검증 중단:',str(exc)[:150],file=sys.stderr)
         sys.exit(1)
