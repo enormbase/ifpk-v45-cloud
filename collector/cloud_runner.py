@@ -163,9 +163,31 @@ def calculate_estimates(records):
             if values is None:
                 entry['status']='insufficient_or_gapped';entry['neededMonths']=size
             elif kind=='deposit60':
-                entry['value']=mean(values)*(1-.154)
+                avg_60=mean(values)
+                entry['value']=avg_60*(1-.154)
+                entry['latestObservedRate']=seq[-1]['value']
+                entry['grossAverage60']=avg_60
+                entry['taxFactor']=.846
+                entry['monthlyEquivalentRate']=(pow(1+entry['value']/100,1/12)-1)*100
+                entry['observedMonths60']=60
+                entry['window60Start']=seq[-60]['date']
+                entry['sourceCode']=seq[-1].get('sourceCode','')
+                entry['lastRetrievedAt']=seq[-1].get('retrievedAt','')
+                entry['formula']='60개월 세전 산술평균 × (1 − 0.154)'
             elif kind=='mortgage60_120':
-                entry['value']=mean(values[-60:])*.7+mean(values)*.3
+                avg_60=mean(values[-60:]); avg_120=mean(values)
+                entry['value']=avg_60*.7+avg_120*.3
+                entry['latestObservedRate']=seq[-1]['value']
+                entry['grossAverage60']=avg_60
+                entry['grossAverage120']=avg_120
+                entry['weights']={'60months':.7,'120months':.3}
+                entry['observedMonths60']=60
+                entry['observedMonths120']=120
+                entry['window60Start']=seq[-60]['date']
+                entry['window120Start']=seq[-120]['date']
+                entry['sourceCode']=seq[-1].get('sourceCode','')
+                entry['lastRetrievedAt']=seq[-1].get('retrievedAt','')
+                entry['formula']='60개월 평균 × 0.70 + 120개월 평균 × 0.30'
             else:
                 entry['value']=mean(values)
         output.append(entry)
@@ -186,7 +208,7 @@ def prepare_snapshots(records, runs, live:bool, collected_at=None):
     public={'format':'ifpk-public-indicators','generatedAt':generated,'records':records,'estimates':estimates}
     status={'format':'ifpk-collector-v45','generatedAt':generated,'published':live,
             'storage':'Supabase PostgreSQL' if live else '로컬 수집자료: 클라우드 미배포 샘플',
-            'credentialsConfigured':{'KOSIS':bool(live),'ECOS':False},
+            'credentialsConfigured':{'KOSIS':bool(live),'ECOS':bool(live and any(r['id'] in ('DEPOSIT','MORTGAGE') for r in records))},
             'plannedFrequency':'GitHub Actions: 매일 2회 점검 / GitHub 스케줄 실행은 지연될 수 있음',
             'officialPlan':{'sourceSheetId':SOURCE_SHEET_ID,'basis':'2026-11','automaticUpdates':False,'reviewCycleMonths':6},
             'counts':counts,'latestRuns':last,'estimates':estimates,
