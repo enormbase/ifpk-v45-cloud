@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 
 from ifpk_collector import INDICATORS, get_kosis, get_ecos, load_ecos_series, contiguous_values, valid_month
 from cpi_special import collect_special_cpis
+from home_impact import calculate_home_impact
 from rone_live import (
     INDICATOR as RONE_INDICATOR, REBASED_INDICATOR as RONE_REBASED,
     collect_rone_202606_verified, calculate_home_reference,
@@ -213,6 +214,7 @@ def calculate_estimates(records):
 def prepare_snapshots(records, runs, live:bool, collected_at=None):
     records=sorted(records,key=lambda x:(x['id'],x['date']))
     estimates=calculate_estimates(records)
+    home_impact=calculate_home_impact(estimates)
     counts=[];grouped=defaultdict(list)
     for r in records: grouped[r['id']].append(r)
     for k,v in grouped.items():
@@ -221,13 +223,13 @@ def prepare_snapshots(records, runs, live:bool, collected_at=None):
     last=[{'id':x['indicator_id'],'status':x['status'], 'finishedAt':x['finished_at'],
            'fetched':x['fetched'],'inserted':x['inserted'],'revised':x['revised'],'message':x['message']} for x in runs]
     generated=collected_at or utc_now()
-    public={'format':'ifpk-public-indicators','generatedAt':generated,'records':records,'estimates':estimates}
+    public={'format':'ifpk-public-indicators','generatedAt':generated,'records':records,'estimates':estimates,'homeImpact':home_impact}
     status={'format':'ifpk-collector-v45','generatedAt':generated,'published':live,
             'storage':'Supabase PostgreSQL' if live else '로컬 수집자료: 클라우드 미배포 샘플',
             'credentialsConfigured':{'KOSIS':bool(live),'ECOS':bool(live and any(r['id'] in ('DEPOSIT','MORTGAGE') for r in records))},
             'plannedFrequency':'GitHub Actions: 매일 2회 점검 / GitHub 스케줄 실행은 지연될 수 있음',
             'officialPlan':{'sourceSheetId':SOURCE_SHEET_ID,'basis':'2026-11','automaticUpdates':False,'reviewCycleMonths':6},
-            'counts':counts,'latestRuns':last,'estimates':estimates,
+            'counts':counts,'latestRuns':last,'estimates':estimates,'homeImpact':home_impact,
             'notes':'관측월/수집일/배포시각 별개, 수집자료는 6개월 공식계획에 자동반영하지 않음'}
     return public,status
 
