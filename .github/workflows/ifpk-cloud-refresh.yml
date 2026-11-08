@@ -1,0 +1,61 @@
+name: IFPK V45 economic indicators cloud refresh and Pages deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'collector/**'
+      - 'docs/**'
+      - 'supabase/**'
+      - '.github/workflows/**'
+  schedule:
+    # UTC 03:17 and 14:17 = KST 12:17 and 23:17.
+    - cron: '17 3,14 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ifpk-public-pages
+  cancel-in-progress: false
+
+jobs:
+  collect-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Collect KOSIS, store in Supabase, build public JSON
+        env:
+          KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python collector/cloud_runner.py
+
+      - name: Prepare GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload public site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
