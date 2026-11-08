@@ -34,4 +34,31 @@ class ROneProbeTests(unittest.TestCase):
   self.assertEqual(candidate_rows(rows),[])
   with self.assertRaises(ValueError):unpack({'RESULT':{'CODE':'ERROR'}},'SttsApiTblData')
 
+
+class ROneResultDiagnosticsTests(unittest.TestCase):
+ def test_monthly_cycle_in_metadata_request(self):
+  from unittest.mock import patch
+  from rone_probe import run
+  with patch.dict('os.environ', {'RONE_API_KEY':'local-only-test'}):
+   with patch('rone_probe.request_json') as mocked:
+    mocked.return_value={'SttsApiTbl':[{'head':[{'list_total_count':1}]},{'row':[{'STATBL_ID':'A_2024_00045','STATBL_NM':'(월) 매매가격지수_아파트','DTACYCLE_CD':'MM'}]}]}
+    # Stop after metadata call, only inspect args.
+    with patch('rone_probe.unpack', side_effect=ValueError('stop-after-request')):
+     with self.assertRaisesRegex(ValueError, 'stop-after-request'):run()
+    self.assertEqual(mocked.call_args.args[0], 'SttsApiTbl.do')
+    self.assertEqual(mocked.call_args.args[1]['DTACYCLE_CD'], 'MM')
+ def test_safe_result_code_diagnostics(self):
+  import json,io
+  from unittest.mock import patch
+  from rone_probe import request_json
+  class Reply:
+   def __enter__(self):return self
+   def __exit__(self,*a):return False
+   def read(self,*a):return json.dumps({'RESULT':{'CODE':'300','MESSAGE':'KEY=SUPERSECRET'}}).encode()
+  with patch.dict('os.environ', {'RONE_API_KEY':'SUPERSECRET'}):
+   with self.assertRaises(ValueError) as err:
+    request_json('SttsApiTbl.do',{},opener=lambda request,timeout:Reply())
+  self.assertIn('300', str(err.exception))
+  self.assertNotIn('SUPERSECRET',str(err.exception))
+
 if __name__=='__main__':unittest.main()

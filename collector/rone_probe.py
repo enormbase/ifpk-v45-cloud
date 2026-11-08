@@ -47,8 +47,19 @@ def request_json(endpoint: str, params: dict[str, str | int], opener=None) -> di
         if not isinstance(out, dict):
             raise ValueError('R-ONE JSON 최상위 형식 오류')
         if 'RESULT' in out and out['RESULT']:
-            # Provider errors can sometimes echo request URLs/params: do not echo raw.
-            raise ValueError('R-ONE API 응답 RESULT 오류 (인증키·조회조건 확인)')
+            # Only print the provider's short CODE, never the raw response,
+            # URL, message, or token (which may echo credentials).
+            result = out['RESULT']
+            raw_code = str(result.get('CODE', '')) if isinstance(result, dict) else ''
+            code = raw_code if re.fullmatch(r'(?:INFO|ERROR)-\d{3}|\d{3}', raw_code) else 'UNKNOWN'
+            explanations = {
+                '290': '인증키 유효성 확인 필요',
+                '300': '필수 조회조건 누락 확인 필요',
+                '333': '페이지 번호 등 조회조건 형식 확인 필요',
+                '336': '페이지당 조회건수 제한 초과',
+                '337': '당일 호출 횟수 제한 초과',
+            }
+            raise ValueError('R-ONE API 오류코드 '+code+' / '+explanations.get(code, '공식 API 결과 확인 필요'))
         return out
     except urllib.error.HTTPError as exc:
         raise ValueError('R-ONE API HTTP 오류 '+str(exc.code)) from None
@@ -150,7 +161,8 @@ def run():
         raise ValueError('RONE_API_KEY GitHub Secret 설정을 확인해 주세요')
     print('IFPK V48: R-ONE 공식 월간 지역별 아파트 매매가격지수 메타데이터 검증')
     print('검증 통계표: '+TABLE+' / 대전광역시 서구 / 월별 아파트 매매가격지수')
-    meta=request_json('SttsApiTbl.do', {'STATBL_ID':TABLE,'pIndex':1,'pSize':30})
+    print('1단계: 서비스 통계목록 조회 (STATBL_ID 및 월별 DTACYCLE_CD=MM)')
+    meta=request_json('SttsApiTbl.do', {'STATBL_ID':TABLE,'DTACYCLE_CD':'MM','pIndex':1,'pSize':30})
     tables,_=unpack(meta,'SttsApiTbl')
     matched=[r for r in tables if str(r.get('STATBL_ID'))==TABLE]
     if not matched:
