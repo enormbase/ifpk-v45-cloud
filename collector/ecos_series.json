@@ -3,7 +3,7 @@
   "series": [
     {"id":"CPI_CAR", "enabled":false,"stat_code":"901Y009","item_filters":{"ITEM_CODE1":"정확한품목코드확인필요"}},
     {"id":"CPI_TRAVEL", "enabled":false,"stat_code":"901Y009","item_filters":{"ITEM_CODE1":"정확한품목코드확인필요"}},
-    {"id":"DEPOSIT", "enabled":false,"stat_code":"121Y002","item_filters":{"ITEM_CODE1":"정확한품목코드확인필요"}},
-    {"id":"MORTGAGE", "enabled":false,"stat_code":"확인후입력","item_filters":{"ITEM_CODE1":"정확한품목코드확인필요"}}
+    {"id":"DEPOSIT","enabled":true,"stat_code":"121Y002","item_filters":{"ITEM_CODE1":"BEABAA211"}},
+    {"id":"MORTGAGE","enabled":true,"stat_code":"121Y006","item_filters":{"ITEM_CODE1":"BECBLA0302"}}
   ]
 }
