@@ -23,12 +23,14 @@ from urllib.parse import urlsplit
 
 from ifpk_collector import INDICATORS, get_kosis, get_ecos, load_ecos_series, contiguous_values, valid_month
 from cpi_special import collect_special_cpis
+from rone_live import INDICATOR as RONE_INDICATOR, collect_rone_monthly, calculate_home_reference
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 DATA = ROOT / 'docs' / 'data'
 SOURCE_SHEET_ID = '1E7Sqmb4CeTTqpn8vDcl0FMjxSWWZ1qcgZyBQfOteJTM'
 MAX_ROWS = 20000
+ALL_INDICATORS = {**INDICATORS, RONE_INDICATOR: {'name':'대전 서구 아파트 매매가격지수', 'calc':'regional_sale_index'}}
 
 
 def utc_now():
@@ -128,7 +130,7 @@ def normalize_public_rows(db_rows):
     output=[]
     for r in db_rows:
         indicator=r['indicator_id']
-        if indicator not in INDICATORS:
+        if indicator not in ALL_INDICATORS:
             continue
         month=valid_month(r['month'])
         val=float(r['value'])
@@ -149,13 +151,15 @@ def calculate_estimates(records):
     for r in records:
         lookup[r['id']].append(r)
     output=[]
-    for key,desc in INDICATORS.items():
+    for key,desc in ALL_INDICATORS.items():
         seq=sorted(lookup[key],key=lambda x:x['date'])
         if not seq:
             output.append({'id':key,'status':'empty','count':0,'basis':None})
             continue
         kind=desc['calc']
         entry={'id':key,'count':len(seq),'lastMonth':seq[-1]['date'], 'basis':kind,'status':'ready','value':None}
+        if kind=='regional_sale_index':
+            output.append(calculate_home_reference(seq)); continue
         if kind=='latest':
             entry['value']=seq[-1]['value']
         else:
@@ -257,6 +261,13 @@ def gather_official_sources():
         reason = '품목별 CPI 공식 코드 확인 보류: ' + str(exc)[:115]
         for indicator in ('CPI_CAR', 'CPI_TRAVEL'):
             tasks.append((indicator, {'error': reason}))
+    # R-ONE is optional; a temporary provider failure must not break proven
+    # KOSIS/ECOS collection or deployment. Failure is visible in DB runs.
+    if os.getenv('RONE_API_KEY', '').strip():
+        try:
+            tasks.append((RONE_INDICATOR, collect_rone_monthly()))
+        except (ValueError, RuntimeError) as exc:
+            tasks.append((RONE_INDICATOR, {'error': 'R-ONE 대전 서구 검증 보류: '+str(exc)[:115]}))
     return tasks
 
 
@@ -301,7 +312,7 @@ def dry_run(sample_path):
     if raw.get('format')!='ifpk-public-indicators':
         raise ValueError('수집 JSON 자료 형식 오류')
     for row in records:
-        if row['id'] not in INDICATORS:raise ValueError('알 수 없는 지표')
+        if row['id'] not in ALL_INDICATORS:raise ValueError('알 수 없는 지표')
         valid_month(row['date']);float(row['value'])
     public,status=prepare_snapshots(records,[],live=False)
     publish_snapshot(public,status)
