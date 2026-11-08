@@ -16,6 +16,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
@@ -24,7 +25,7 @@ BASE = 'https://www.reb.or.kr/r-one/openapi/'
 TABLE = 'A_2024_00045'
 TIMEOUT = 30
 PAGE_SIZE = 1000
-MAX_PAGES = 8   # rate-limited on purpose; read only one calendar year
+MAX_PAGES = 8   # rate-limited on purpose; read only a single month per try
 
 
 def request_json(endpoint: str, params: dict[str, str | int], opener=None) -> dict[str, Any]:
@@ -67,6 +68,75 @@ def request_json(endpoint: str, params: dict[str, str | int], opener=None) -> di
         raise ValueError('R-ONE API 연결 실패') from None
     except (UnicodeError,json.JSONDecodeError):
         raise ValueError('R-ONE JSON 디코딩 실패') from None
+
+
+
+def fetch_xml_rows(endpoint: str, params: dict[str, str | int], opener=None) -> tuple[list[dict],int|None]:
+    """Read official XML (avoids known Korean JSON text corruption).
+
+    Authentication stays in the HTTPS request only; URLs and response messages
+    are never printed. INFO-200 is an empty result, not an invalid-key diagnosis.
+    """
+    if not re.fullmatch(r'SttsApiTbl(?:Itm|Data)?\.do', endpoint):
+        raise ValueError('허용되지 않은 R-ONE 조회 서비스')
+    key = os.environ.get('RONE_API_KEY', '').strip()
+    if not key:
+        raise ValueError('GitHub Repository Secrets에 RONE_API_KEY가 없습니다')
+    query = {**params,'Type':'xml','KEY':key}
+    url=BASE + endpoint + '?' + urllib.parse.urlencode(query)
+    req=urllib.request.Request(url,headers={'User-Agent':'IFPK-RONE-Validation/1.2','Accept':'application/xml'})
+    try:
+        transport = opener or urllib.request.urlopen
+        with transport(req,timeout=TIMEOUT) as response:
+            raw=response.read(5_000_001)
+        if len(raw)>5_000_000:
+            raise ValueError('R-ONE XML 응답 크기 한도 초과')
+        root=ET.fromstring(raw)
+    except urllib.error.HTTPError as exc:
+        raise ValueError('R-ONE HTTP 오류 '+str(exc.code)) from None
+    except urllib.error.URLError:
+        raise ValueError('R-ONE API 연결 실패') from None
+    except (ET.ParseError,UnicodeError):
+        raise ValueError('R-ONE XML 응답 파싱 실패') from None
+    if root.tag != endpoint.split('.')[0]:
+        raise ValueError('R-ONE 응답 서비스명 불일치')
+    result=root.find('RESULT')
+    if result is None: result=root.find('./head/RESULT')
+    if result is not None:
+        code=str(result.findtext('CODE','')).strip()
+        if code == 'INFO-200':
+            return [],0
+        if code and code != 'INFO-000':
+            safe=code if re.fullmatch(r'(?:INFO|ERROR)-\d{3}|\d{3}',code) else 'UNKNOWN'
+            raise ValueError('R-ONE API 상태 '+safe+' (인증/조회조건 검토, 키 미출력)')
+    rows=[{el.tag:(el.text or '').strip() for el in row} for row in root.findall('row')]
+    # some response versions put rows under a wrapper
+    if not rows: rows=[{el.tag:(el.text or '').strip() for el in row} for row in root.findall('.//row')]
+    total_txt=root.findtext('./head/list_total_count')
+    total=int(total_txt) if (total_txt or '').isdigit() else None
+    return rows,total
+
+
+def locate_months():
+    now=datetime.now()
+    total=now.year*12+(now.month-1)
+    return [f'{(total-i)//12:04d}{(total-i)%12+1:02d}' for i in (1,2,3)]
+
+
+def choose_table(rows):
+    matched=[r for r in rows if str(r.get('STATBL_ID'))==TABLE]
+    if len(matched)!=1:
+        candidates=[r for r in rows if '매매' in str(r.get('STATBL_NM','')) and '아파트' in str(r.get('STATBL_NM','')) and '지수' in str(r.get('STATBL_NM','')) and '월' in str(r.get('STATBL_NM',''))]
+        print('지정 코드 미확인. 비슷한 공식 통계표 후보 (확정·저장 안 함):')
+        for c in candidates[:12]:
+            print('  ',c.get('STATBL_ID',''),c.get('STATBL_NM',''),c.get('DTACYCLE_CD',''))
+        raise ValueError('공식 통계목록에서 지정 코드 '+TABLE+' 확인 불가')
+    item=matched[0]
+    name=str(item.get('STATBL_NM',''))
+    cycle=str(item.get('DTACYCLE_CD',''))
+    if not ('MM' in cycle.split(',') and '아파트' in name and '매매' in name and '지수' in name):
+        raise ValueError('통계표명 또는 월별 주기가 불일치합니다. 저장 보류')
+    return item
 
 
 def unpack(doc: dict, root: str):
@@ -159,52 +229,51 @@ def summarize(rows:list[dict]):
 def run():
     if not os.getenv('RONE_API_KEY','').strip():
         raise ValueError('RONE_API_KEY GitHub Secret 설정을 확인해 주세요')
-    print('IFPK V48: R-ONE 공식 월간 지역별 아파트 매매가격지수 메타데이터 검증')
-    print('검증 통계표: '+TABLE+' / 대전광역시 서구 / 월별 아파트 매매가격지수')
-    print('1단계: 서비스 통계목록 조회 (STATBL_ID 및 월별 DTACYCLE_CD=MM)')
-    meta=request_json('SttsApiTbl.do', {'STATBL_ID':TABLE,'DTACYCLE_CD':'MM','pIndex':1,'pSize':30})
-    tables,_=unpack(meta,'SttsApiTbl')
-    matched=[r for r in tables if str(r.get('STATBL_ID'))==TABLE]
-    if not matched:
-        raise ValueError('통계표ID가 공식 API 목록에 없습니다. 별도 확인 필요')
-    item=matched[0]
-    name=str(item.get('STATBL_NM',''))
-    cycle=str(item.get('DTACYCLE_CD',''))
-    print('통계표명:', name, '/ 주기:',cycle)
-    if cycle not in ('MM','M') or not ('아파트' in name and '매매' in name and '지수' in name):
-        raise ValueError('공식 통계표명·주기가 예상과 불일치: 저장·적용 보류')
-    print('공식 자료 검증: 월별 아파트 매매가격지수 계열 확인')
-    year=str(datetime.now().year)
-    collected=[];last_total=None
-    for page in range(1,MAX_PAGES+1):
-        doc=request_json('SttsApiTblData.do', {'STATBL_ID':TABLE,'DTACYCLE_CD':'MM',
-              'START_WRTTIME':year,'END_WRTTIME':year,'pIndex':page,'pSize':PAGE_SIZE})
-        batch,total=unpack(doc,'SttsApiTblData')
-        if last_total is None:last_total=total
-        collected.extend(batch)
-        print(f'해당 연도 메타데이터 검증: 페이지 {page}, 확인 {len(batch)}행 (누적 {len(collected)}행)')
-        if not batch or len(batch)<PAGE_SIZE:break
-        if total is not None and page*PAGE_SIZE>=total:break
-    candidates=summarize(collected)
-    print('\n--- 대전 서구 분류/항목 후보 (API 값 그대로, 인증키 비공개) ---')
-    if not candidates:
-        print('후보 없음: API 반환 범위·지역 분류를 추가 확인해야 합니다.')
-        print('임의의 지역코드를 등록하지 않았으며, 기존 V47 자동수집에는 영향이 없습니다.')
-        # Potential API's period range filters can use other formats: do not guess.
-        print('응답 행수:',len(collected),' / 조회 연도:',year)
-        return 2
-    for c in candidates:
-        print(json.dumps(c,ensure_ascii=False))
-    if len(candidates)!=1:
-        print('후보가 여러 개입니다. 항목명이 실제 매매가격지수인지 확인 후 확정해야 합니다.')
-        return 3
-    only=candidates[0]
-    if not only['item'] or not ('지수' in only['item'] or '매매' in only['item']):
-        print('단일 후보지만 항목명이 미확인. 확정 전 공식 항목 목록과 비교가 필요합니다.')
-        return 3
-    print('검증 후보 1개 확인. CLS_ID와 ITM_ID를 확인해 다음 단계에 연결하세요.')
-    print('이 작업은 검증 전용이며 DB 저장 및 확정 재무계획 변경을 하지 않습니다.')
-    return 0
+    print('IFPK V48: R-ONE 대전 서구 월별 아파트 매매가격지수 안전검증 V3')
+    print('1단계: 서비스 통계표 전체목록 조회 (필터 없음, XML)')
+    # SttsApiTbl supports STATBL_ID filter but does NOT accept DTACYCLE_CD
+    # as a documented filter. Enumerating prevents INFO-200 on overfiltering.
+    tables=[]
+    for page in range(1,3):
+        batch,total=fetch_xml_rows('SttsApiTbl.do',{'pIndex':page,'pSize':1000})
+        tables+=batch
+        if not batch or (total is not None and len(tables)>=total) or len(batch)<1000:
+            break
+    print('공식 통계표 목록:',len(tables),'건')
+    item=choose_table(tables)
+    print('검증 통계표:',TABLE,' / ',item.get('STATBL_NM',''),'/ 주기',item.get('DTACYCLE_CD',''))
+    print('2단계: 통계항목 목록 조회 (확인용)')
+    try:
+        itemrows,_=fetch_xml_rows('SttsApiTblItm.do', {'STATBL_ID':TABLE,'pIndex':1,'pSize':1000})
+        print('항목 목록:',len(itemrows),'건')
+        wanted=[r for r in itemrows if '서구' in str(r.get('ITM_FULLNM','')+' '+r.get('ITM_NM','')) and '대전' in str(r.get('ITM_FULLNM',''))]
+        for r in wanted[:6]:
+            print('항목 후보:',r.get('ITM_ID',''),r.get('ITM_FULLNM',''),r.get('ITM_NM',''))
+    except ValueError as exc:
+        print('항목 목록은 추가 점검 필요:',str(exc)[:120])
+    print('3단계: 최근 월별 데이터에서 대전 서구 관측행 식별 (DB 저장 없음)')
+    for month in locate_months():
+        collected=[]
+        total=None
+        for page in range(1,MAX_PAGES+1):
+            batch,all_count=fetch_xml_rows('SttsApiTblData.do',{'STATBL_ID':TABLE,'DTACYCLE_CD':'MM',
+                'WRTTIME_IDTFR_ID':month,'pIndex':page,'pSize':1000})
+            collected.extend(batch)
+            if total is None:total=all_count
+            if not batch or len(batch)<1000 or (total is not None and page*1000>=total):break
+        print('통계월',month,'관측행:',len(collected),'건')
+        candidates=summarize(collected)
+        if candidates:
+            print('대전 서구 후보 - 공식 원문에서 분류코드/항목코드 확인:')
+            for c in candidates[:8]:print(json.dumps(c,ensure_ascii=False))
+            if len(candidates)==1 and ('지수' in candidates[0]['item'] or '매매' in candidates[0]['item']):
+                print('단일 후보 검증: 조회 성공. 실제 적용 전 시계열·기준년도 추가검증 필요.')
+                return 0
+            print('후보 확인: 항목 명칭을 수작업 검토해야 하므로 적용 보류.')
+            return 2
+    print('최근 3개 통계월에서 대전 서구 지수 미확인. 조회조건/분류 정보 추가검토 필요.')
+    print('기존 CPI/금리·Supabase/웹사이트 값은 변경하지 않았습니다.')
+    return 2
 
 
 if __name__=='__main__':

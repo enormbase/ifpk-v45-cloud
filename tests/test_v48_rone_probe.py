@@ -36,17 +36,25 @@ class ROneProbeTests(unittest.TestCase):
 
 
 class ROneResultDiagnosticsTests(unittest.TestCase):
- def test_monthly_cycle_in_metadata_request(self):
+ def test_table_discovery_uses_full_list_and_monthly_cycle(self):
+  from rone_probe import choose_table
+  self.assertEqual(choose_table([{'STATBL_ID':'A_2024_00045','STATBL_NM':'(월) 매매가격지수_아파트','DTACYCLE_CD':'MM'}])['STATBL_ID'],'A_2024_00045')
+  with self.assertRaises(ValueError):choose_table([{'STATBL_ID':'A_2024_00178','STATBL_NM':'(월) 매매가격지수_아파트','DTACYCLE_CD':'MM'}])
+ def test_xml_parsing_and_empty_result(self):
   from unittest.mock import patch
-  from rone_probe import run
-  with patch.dict('os.environ', {'RONE_API_KEY':'local-only-test'}):
-   with patch('rone_probe.request_json') as mocked:
-    mocked.return_value={'SttsApiTbl':[{'head':[{'list_total_count':1}]},{'row':[{'STATBL_ID':'A_2024_00045','STATBL_NM':'(월) 매매가격지수_아파트','DTACYCLE_CD':'MM'}]}]}
-    # Stop after metadata call, only inspect args.
-    with patch('rone_probe.unpack', side_effect=ValueError('stop-after-request')):
-     with self.assertRaisesRegex(ValueError, 'stop-after-request'):run()
-    self.assertEqual(mocked.call_args.args[0], 'SttsApiTbl.do')
-    self.assertEqual(mocked.call_args.args[1]['DTACYCLE_CD'], 'MM')
+  from rone_probe import fetch_xml_rows
+  class Reply:
+   def __init__(self,p): self.p=p
+   def __enter__(self):return self
+   def __exit__(self,*a):return False
+   def read(self,*args):return self.p
+  payload=b'<SttsApiTbl><head><list_total_count>1</list_total_count><RESULT><CODE>INFO-000</CODE></RESULT></head><row><STATBL_ID>A_2024_00045</STATBL_ID></row></SttsApiTbl>'
+  with patch.dict('os.environ',{'RONE_API_KEY':'SUPERSECRET'}):
+   rows,n=fetch_xml_rows('SttsApiTbl.do',{},opener=lambda req,timeout:Reply(payload))
+   self.assertEqual(n,1);self.assertEqual(rows[0]['STATBL_ID'],'A_2024_00045')
+   empty=b'<SttsApiTbl><RESULT><CODE>INFO-200</CODE></RESULT></SttsApiTbl>'
+   rows,n=fetch_xml_rows('SttsApiTbl.do',{},opener=lambda req,timeout:Reply(empty))
+   self.assertEqual((rows,n),([],0))
  def test_safe_result_code_diagnostics(self):
   import json,io
   from unittest.mock import patch
@@ -62,3 +70,21 @@ class ROneResultDiagnosticsTests(unittest.TestCase):
   self.assertNotIn('SUPERSECRET',str(err.exception))
 
 if __name__=='__main__':unittest.main()
+
+class ROneProbeRunTests(unittest.TestCase):
+ def test_run_probes_single_month_not_unspecified_annual(self):
+  from unittest.mock import patch
+  from rone_probe import run
+  calls=[]
+  def fake_request(endpoint,params):
+   calls.append((endpoint,params))
+   if endpoint=='SttsApiTbl.do':
+    return [{'STATBL_ID':'A_2024_00045','STATBL_NM':'(월) 매매가격지수_아파트','DTACYCLE_CD':'MM'}],1
+   if endpoint=='SttsApiTblItm.do': return [],0
+   return [{'CLS_FULLNM':'대전광역시>서구','CLS_NM':'서구','CLS_ID':'510123','ITM_ID':'100001','ITM_NM':'매매가격지수', 'UI_NM':'2026.1=100', 'WRTTIME_IDTFR_ID':params['WRTTIME_IDTFR_ID'],'DTA_VAL':'100.23'}],1
+  with patch.dict('os.environ',{'RONE_API_KEY':'not-for-logs'}):
+   with patch('rone_probe.fetch_xml_rows',side_effect=fake_request):
+    self.assertEqual(run(),0)
+  self.assertEqual(calls[0][1],{'pIndex':1,'pSize':1000})
+  self.assertEqual(calls[-1][1]['DTACYCLE_CD'],'MM')
+  self.assertRegex(calls[-1][1]['WRTTIME_IDTFR_ID'],r'^\d{6}$')
