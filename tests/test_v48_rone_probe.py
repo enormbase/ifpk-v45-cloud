@@ -126,3 +126,39 @@ class V4ErrorEnvelopeTests(unittest.TestCase):
   selected=candidate_rows(rows,ids)
   self.assertEqual(len(selected),1)
   self.assertEqual(selected[0]['region'],'대전광역시 서구')
+
+
+class V5DiagnosticMatrixTests(unittest.TestCase):
+    def test_diagnostic_filters_and_no_key_exposure(self):
+        from unittest.mock import patch
+        from rone_probe import diagnose_empty_months
+        import io
+        from contextlib import redirect_stdout
+        calls=[]
+        def fake(endpoint, params):
+            calls.append((endpoint,params))
+            # The only populated condition is the wide time-range probe.
+            if params.get('START_WRTTIME')=='2025' and 'ITM_ID' not in params:
+                return [{'ITM_ID':'91000','ITM_NM':'다른 지역',
+                         'CLS_ID':'40001','CLS_NM':'다른 분류',
+                         'WRTTIME_IDTFR_ID':'202509','UI_NM':'지수'}],42
+            return [],0
+        with patch('rone_probe.fetch_xml_rows', side_effect=fake):
+            buf=io.StringIO()
+            with redirect_stdout(buf): out=diagnose_empty_months({'510050'})
+        self.assertEqual(len(calls),6)
+        self.assertEqual(len(out),6)
+        self.assertEqual(out[1]['rows'],1)
+        self.assertEqual(calls[4][1]['ITM_ID'],'510050')
+        self.assertEqual(calls[4][1]['START_WRTTIME'],'2025')
+        self.assertNotIn('DTA_VAL',buf.getvalue())
+        self.assertNotIn('RONE_API_KEY',buf.getvalue())
+
+    def test_diagnostic_handles_info200(self):
+        from unittest.mock import patch
+        from rone_probe import diagnose_empty_months
+        import io
+        from contextlib import redirect_stdout
+        with patch('rone_probe.fetch_xml_rows',return_value=([],0)):
+            with redirect_stdout(io.StringIO()):out=diagnose_empty_months({'510050'})
+        self.assertEqual([x['rows'] for x in out],[0]*6)

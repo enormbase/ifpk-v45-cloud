@@ -25,7 +25,7 @@ BASE = 'https://www.reb.or.kr/r-one/openapi/'
 TABLE = 'A_2024_00045'
 TIMEOUT = 30
 PAGE_SIZE = 1000
-MAX_PAGES = 8   # rate-limited on purpose; read only a single month per try
+MAX_PAGES = 8   # limited pagination; read-only R-ONE verification
 
 
 def request_json(endpoint: str, params: dict[str, str | int], opener=None) -> dict[str, Any]:
@@ -263,10 +263,52 @@ def summarize(rows:list[dict],verified_itm_ids:set[str]|None=None):
     return summary
 
 
+def diagnose_empty_months(valid_ids: set[str]) -> list[dict]:
+    """Bounded, READ-ONLY diagnostic matrix using official query parameter names.
+
+    Printed metadata contains NO API key or URLs. The provider may supply rows
+    ordered oldest first; this diagnostic therefore reports returned dates,
+    not an invented notion of 'latest'. The result MUST NOT enter production DB.
+    """
+    print('4단계: 빈 결과 원인 진단 (읽기전용, 조건 6가지 비교)')
+    base={'STATBL_ID':TABLE, 'DTACYCLE_CD':'MM', 'pIndex':1,'pSize':25}
+    itm=sorted(valid_ids)[0]
+    cases=[
+        ('A 표/월주기만 조회', {}),
+        ('B 2025년 이후 기간조회', {'START_WRTTIME':'2025'}),
+        ('C 2026-09 월조회만', {'WRTTIME_IDTFR_ID':'202609'}),
+        ('D 대전 서구 ITM만', {'ITM_ID':itm}),
+        ('E 대전 서구 + 기간조회', {'ITM_ID':itm,'START_WRTTIME':'2025'}),
+        ('F 2024-09 월조회만', {'WRTTIME_IDTFR_ID':'202409'}),
+    ]
+    results=[]
+    for label,filters in cases:
+        try:
+            rows,total=fetch_xml_rows('SttsApiTblData.do', {**base,**filters})
+            result={'case':label,'rows':len(rows),'total':total}
+            print('진단',label,':',len(rows),'행 / 전체',total if total is not None else '미제공')
+            if rows:
+                # No actual DTA_VAL is printed: never mistake an unverified
+                # national/other series for the local apartment index.
+                for row in rows[:2]:
+                    fields={k:str(row.get(k,''))[:65] for k in (
+                        'WRTTIME_IDTFR_ID','CLS_ID','CLS_NM','ITM_ID','ITM_NM',
+                        'ITM_FULLNM','UI_NM')}
+                    print('  응답 메타:',json.dumps(fields,ensure_ascii=False))
+                result['first_month']=str(rows[0].get('WRTTIME_IDTFR_ID',''))
+                result['itm_ids']=sorted({str(r.get('ITM_ID','')) for r in rows if r.get('ITM_ID')})[:5]
+            results.append(result)
+        except ValueError as exc:
+            print('진단',label,': 오류:',str(exc)[:135])
+            results.append({'case':label,'error':str(exc)[:135]})
+    print('진단 완료. 분류/시간 조회 조건을 위 결과로 확인해야 하며, DB·웹사이트는 갱신하지 않음.')
+    return results
+
+
 def run():
     if not os.getenv('RONE_API_KEY','').strip():
         raise ValueError('RONE_API_KEY GitHub Secret 설정을 확인해 주세요')
-    print('IFPK V48: R-ONE 대전 서구 월별 아파트 매매가격지수 안전검증 V4')
+    print('IFPK V48: R-ONE 대전 서구 아파트 매매가격지수 진단검증 V5')
     print('1단계: 서비스 통계표 전체목록 조회 (필터 없음, XML)')
     # SttsApiTbl supports STATBL_ID filter but does NOT accept DTACYCLE_CD
     # as a documented filter. Enumerating prevents INFO-200 on overfiltering.
@@ -314,7 +356,8 @@ def run():
             print('후보 조회됨: 분류 항목/단위를 추가 검증해야 하므로 적용 보류.')
             return 2
         print('해당 월에 지역 필터와 일치하는 수치 없음. 다음 월 조회')
-    print('최근 6개 통계월에서 대전 서구 지수 미확인. 조회조건/분류 정보 추가검토 필요.')
+    print('최근 6개 통계월에서 대전 서구 지수 미확인. 필터별 진단 시작.')
+    diagnose_empty_months(valid_ids)
     print('기존 CPI/금리·Supabase/웹사이트 값은 변경하지 않았습니다.')
     return 2
 
