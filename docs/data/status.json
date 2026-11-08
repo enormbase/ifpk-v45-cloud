@@ -1,0 +1,62 @@
+{
+  "format": "ifpk-collector-v45",
+  "generatedAt": "2026-11-08T09:53:12+00:00",
+  "published": false,
+  "storage": "로컬 수집자료: 클라우드 미배포 샘플",
+  "credentialsConfigured": {
+    "KOSIS": false,
+    "ECOS": false
+  },
+  "plannedFrequency": "GitHub Actions: 매일 2회 점검 / GitHub 스케줄 실행은 지연될 수 있음",
+  "officialPlan": {
+    "sourceSheetId": "1E7Sqmb4CeTTqpn8vDcl0FMjxSWWZ1qcgZyBQfOteJTM",
+    "basis": "2026-11",
+    "automaticUpdates": false,
+    "reviewCycleMonths": 6
+  },
+  "counts": [
+    {
+      "id": "CPI_GENERAL",
+      "count": 34,
+      "firstMonth": "2024-01",
+      "lastMonth": "2026-10",
+      "lastRetrieved": "2026-11-08T09:31:27+00:00"
+    }
+  ],
+  "latestRuns": [],
+  "estimates": [
+    {
+      "id": "CPI_GENERAL",
+      "count": 34,
+      "lastMonth": "2026-10",
+      "basis": "latest",
+      "status": "ready",
+      "value": 120.73
+    },
+    {
+      "id": "CPI_CAR",
+      "status": "empty",
+      "count": 0,
+      "basis": null
+    },
+    {
+      "id": "CPI_TRAVEL",
+      "status": "empty",
+      "count": 0,
+      "basis": null
+    },
+    {
+      "id": "DEPOSIT",
+      "status": "empty",
+      "count": 0,
+      "basis": null
+    },
+    {
+      "id": "MORTGAGE",
+      "status": "empty",
+      "count": 0,
+      "basis": null
+    }
+  ],
+  "notes": "관측월/수집일/배포시각 별개, 수집자료는 6개월 공식계획에 자동반영하지 않음"
+}

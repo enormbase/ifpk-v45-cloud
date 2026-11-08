@@ -1,0 +1,9 @@
+{
+  "explanation": "ECOS는 계열별 정확한 ITEM_CODE 확인 전 데이터 혼합을 방지하기 위해 기본 비활성화합니다. 한국은행 ECOS 통계항목코드 조회로 검증한 후 enabled=true로 설정하세요.",
+  "series": [
+    {"id":"CPI_CAR", "enabled":false,"stat_code":"901Y009","item_filters":{"ITEM_CODE1":"정확한품목코드확인필요"}},
+    {"id":"CPI_TRAVEL", "enabled":false,"stat_code":"901Y009","item_filters":{"ITEM_CODE1":"정확한품목코드확인필요"}},
+    {"id":"DEPOSIT", "enabled":false,"stat_code":"121Y002","item_filters":{"ITEM_CODE1":"정확한품목코드확인필요"}},
+    {"id":"MORTGAGE", "enabled":false,"stat_code":"확인후입력","item_filters":{"ITEM_CODE1":"정확한품목코드확인필요"}}
+  ]
+}
