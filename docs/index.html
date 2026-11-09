@@ -1336,8 +1336,8 @@ body:has(#cp-family) .cp-region-row strong{color:#4d5d88}
 .v511-kpis b{overflow-wrap:anywhere}
 .v511-review .table-wrap{max-width:100%;overflow-x:auto}
 </style></head><body>
-<header class="topbar"><div class="brand"><span class="mark" aria-hidden="true">▥</span><div>생애설계<small>LIFE PLAN STUDIO · IFPK V51.1</small></div></div><div class="header-right"><span class="local-dot"></span><span class="quiet">계산 기준자료 확인일 · 2026.11.08</span><button class="secondary" id="print-btn" aria-haspopup="dialog" aria-controls="print-choice">인쇄 / PDF ▾</button><a id="sheet-btn" class="primary" target="_blank" rel="noopener" style="border-radius:8px;padding:10px 16px;color:#fff;text-decoration:none">계산 근거 시트 ↗</a></div></header>
-<nav id="nav" aria-label="주요 메뉴"></nav><main id="main"></main><footer><span>IFPK AI 통합 재무설계 · V51.1 재설계 검토</span><span>경제지표: GitHub Actions·Supabase 공개 자료 · 공식 재무계획은 정기 재설계 전까지 유지</span></footer><div id="toast" class="toast" role="status"></div>
+<header class="topbar"><div class="brand"><span class="mark" aria-hidden="true">▥</span><div>생애설계<small>LIFE PLAN STUDIO · IFPK V51.1c</small></div></div><div class="header-right"><span class="local-dot"></span><span class="quiet">계산 기준자료 확인일 · 2026.11.08</span><button class="secondary" id="print-btn" aria-haspopup="dialog" aria-controls="print-choice">인쇄 / PDF ▾</button><a id="sheet-btn" class="primary" target="_blank" rel="noopener" style="border-radius:8px;padding:10px 16px;color:#fff;text-decoration:none">계산 근거 시트 ↗</a></div></header>
+<nav id="nav" aria-label="주요 메뉴"></nav><main id="main"></main><footer><span>IFPK AI 통합 재무설계 · V51.1c 소비계획 구간 정합성</span><span>경제지표: GitHub Actions·Supabase 공개 자료 · 공식 재무계획은 정기 재설계 전까지 유지</span></footer><div id="toast" class="toast" role="status"></div>
 <dialog id="print-choice" aria-labelledby="print-choice-title">
  <h2 id="print-choice-title">🖨️ 인쇄 · PDF 저장</h2>
  <p class="muted small">인쇄할 범위를 선택하세요. PDF로 저장하려면 다음에 열리는 브라우저 인쇄 창에서 <b>PDF로 저장</b>을 선택하면 됩니다.</p>
@@ -1413,9 +1413,24 @@ delete persistent.consumption;delete persistent.consumptionStart;
 const spendEvents=()=>persistent.consumptionEvents||[];
 function hasSpendingChanges(){return baselineChanged()||spendEvents().length>0;}
 function spendingTotal(s,group=null){return SPENDING.filter(x=>!group||x.group===group).reduce((a,row)=>a+Number(s[row.id]??row.value),0);}
-// Website-only approximation: future differences change 2.5% annually. The Sheet's CPI rolling model is unchanged.
-function spendingFactor(date){const [y,m]=date.split('-').map(Number);return Math.pow(1.025,(y-2026)+(m-11)/12);}
-function originalBaselineAtStart(start){const factor=spendingFactor(start);return Object.fromEntries(SPENDING.map(r=>[r.id,Math.round(r.value*factor)]));}
+// V51.1c: 2026-11 current general consumption budget is the only customer-approved
+// anchor. Later 2.2m / 2.3m phase budgets had no verified decision rationale.
+// Preserve the old workbook snapshot curve solely as the reconciliation anchor.
+// This preview is not the official six-month CPI rollover/approval process.
+function legacySheetGeneralBudget(date){
+ const y=Number(String(date).slice(0,4));
+ if(y<=2026)return 2400000;
+ if(y<=2029)return 2200000;
+ if(y<=2033)return 2300000;
+ return Math.round(2300000*Math.pow(1.025,y-2033));
+}
+function sheetGeneralBudget(date){
+ const m=String(date).slice(0,7),p=m.split('-').map(Number);
+ const months=(p[0]-2026)*12+p[1]-11;
+ return Math.round(BASE_GENERAL*Math.pow(1.025,months/12));
+}
+function spendingFactor(date){return sheetGeneralBudget(date)/BASE_GENERAL;}
+function originalBaselineAtStart(start){const factor=legacySheetGeneralBudget(start)/BASE_GENERAL;return Object.fromEntries(SPENDING.map(r=>[r.id,Math.round(r.value*factor)]));}
 function baselineAtStart(start){const factor=spendingFactor(start),base=baseSpend();return Object.fromEntries(SPENDING.map(r=>[r.id,Math.round(base[r.id]*factor)]));}
 function lastEventAt(date,events=spendEvents()){let active=null;for(const e of events){if(e.date>date)break;active=e;}return active;}
 function expensePlanAt(date,events=spendEvents()){
@@ -1443,7 +1458,7 @@ function cashDeltaMap(events=spendEvents()){
  return deltas;
 }
 function totalCashDelta(date){
- if(!hasSpendingChanges()||date<PLAN_START)return 0;
+ if(date<PLAN_START)return 0;
  if(!cashDeltaCache)cashDeltaCache=cashDeltaMap();
  return date>=RETIRE_START?(cashDeltaCache['2056-03']||0):(cashDeltaCache[date]||0);
 }
@@ -1528,11 +1543,11 @@ function goalScenarioMonth(m,date){
  return {...m,...p,net:m.net-(p.expense-Number(unmodifiedMonthly(date).expense||0)),cash:Math.round(m.cash+p.cashDelta),source:'원본 + 수정된 목표 웹 재계산(고정 대출한도·시장가정)',shortfall:Math.max(0,-Math.round(m.cash+p.cashDelta))};
 }
 function scenarioMonth(raw,date){
- if(!raw||!hasSpendingChanges()||date<PLAN_START||date>PLAN_LAST)return raw;
+ if(!raw||date<PLAN_START||date>PLAN_LAST)return raw;
  const delta=date<RETIRE_START?monthSpendDelta(date):0;
  const carry=totalCashDelta(date);
  if(delta===0&&carry===0)return raw;
- return {...raw,expense:Number(raw.expense||0)+delta,net:Number(raw.net||0)-delta,cash:Math.round(Number(raw.cash||0)-carry),shortfall:Math.max(0,Math.round(carry-Number(raw.cash||0))),source:date<RETIRE_START?'일반소비 변경 이력 반영 · 웹 간이 전망':'은퇴 전 소비변경으로 남은 일반현금만 이월 · 은퇴설계 원본 유지'};
+ return {...raw,expense:Number(raw.expense||0)+delta,net:Number(raw.net||0)-delta,cash:Math.round(Number(raw.cash||0)-carry),shortfall:Math.max(0,Math.round(carry-Number(raw.cash||0))),source:date<RETIRE_START?'2026.11 생활비 기초 240만원 · 연 2.5% 수정전망(구기준 원장 대비 차액)':'은퇴 전 생활비 기준변경으로 남은 일반현금만 이월 · 은퇴설계 원본 유지'};
 }
 // Net-salary override changes household cash inflow before retirement, preserving
 // the original annual wage-growth assumption. It does NOT recompute DC, pension,
@@ -2461,12 +2476,12 @@ function gdConsumptionDataExplanation(){
  const wageRef=String(wage.ref||'2020~2025년');
  return `<div class="cc-datagrid" aria-label="일반소비 외부 경제지표와 갱신 기준">
  <article class="cc-datacard"><div class="hm-minor-heading"><span class="hm-tag source">KOSIS · 통계 기반</span><b>① 생활비 물가: 전국 소비자물가지수</b></div>
- ${hmBasis([['자료 출처','KOSIS · 전국 소비자물가지수(CPI)'],['저장된 통계 기준월',cpiPeriod],['지수 저장값',Number(cpi.value).toLocaleString('ko-KR',{maximumFractionDigits:4})+' (지수)'],['경과기간 반영','해당 기간 실제 CPI 지수 변화율'],['미래 물가 가정','연 2.5% 고정'],['갱신 원칙','새 월별 CPI 공표 시 실측 구간 재산출']])}
+ ${hmBasis([['자료 출처','KOSIS · 전국 소비자물가지수(CPI)'],['저장된 통계 기준월',cpiPeriod],['지수 저장값',Number(cpi.value).toLocaleString('ko-KR',{maximumFractionDigits:4})+' (지수)'],['CPI 활용','이미 지난 기간의 물가 변화로 앞으로의 생활비를 보정'],['미래 물가 가정','연 2.5% 고정'],['갱신 원칙','기존 2.5% 예상 물가와 실제 CPI의 차이를 미래 전망에 보정']])}
  <details class="hm-method-details cc-detail"><summary>생활비 물가가 어떻게 갱신되나요? <span class="hm-method-chevron" aria-hidden="true">⌄</span></summary><div class="hm-method-body">
- <div class="cc-flow"><span>① 새 CPI 발표 확인</span><i>→</i><span>② 기존 기준월과 실제 지수 비교</span><i>→</i><span>③ 경과기간 생활비 재산출</span><i>→</i><span>④ 미래 연 2.5% 가정 적용</span></div>
- <div class="cc-formula"><span>경과기간의 물가 반영</span><strong>조정 생활비 = 기준 생활비 × (최신 CPI ÷ 기준 CPI)</strong><small>동일한 기준연도·통계 범위의 지수로 비교합니다.</small></div>
- <div class="cc-formula"><span>발표된 기간 이후의 미래 생활비 추정</span><strong>미래 생활비 = 최신 기준 생활비 × (1 + 0.025)<sup>잔여 개월 수 / 12</sup></strong><small>연 2.5%는 모델에서 정한 고정 가정이며, 최신 CPI의 월간 상승률을 미래에 그대로 연장하지 않습니다.</small></div>
- <p class="hm-method-reason"><b>재무설계 영향</b> · 원칙적으로 일반소비 12개 항목의 미래 생활비, 월 저축 전 여유금액 및 은퇴 전 현금흐름을 다시 검토합니다. 주택대출·양육비·은퇴 후 생활비는 각 설계의 별도 기준을 유지합니다.</p>
+ <div class="cc-flow"><span>① 새 CPI 발표 확인</span><i>→</i><span>② 기존 기준월과 실제 지수 비교</span><i>→</i><span>③ 이후 생활비 기준 보정</span><i>→</i><span>④ 미래 연 2.5% 가정 적용</span></div>
+ <div class="cc-formula"><span>이미 관측된 CPI로 미래 생활비를 보정</span><strong>보정배율 = 실제 CPI 변화배율 ÷ 같은 기간의 기존 2.5% 예상배율</strong><small>원래 생활비 전망에 예상 물가상승분이 이미 반영되어 있으므로, 차이만 보정해 이중 계산을 막습니다. CPI는 고객의 실제 지출액이 아닙니다.</small></div>
+ <div class="cc-formula"><span>앞으로 남은 기간의 생활비 전망</span><strong>미래 생활비 = CPI로 보정한 기준 생활비 × (1 + 0.025)<sup>남은 개월 수 / 12</sup></strong><small>지난 기간의 물가만 실제 CPI로 보정하고, 그 이후 미래 구간은 연 2.5% 가정을 유지합니다. 이미 지난 달의 소비를 다시 지출하게 하는 것이 아닙니다.</small></div>
+ <p class="hm-method-reason"><b>재무설계 영향</b> · 일반소비는 미래 특정 시점의 목돈을 모으는 목적저축이 아니라 매달 지출하는 생활비입니다. CPI가 변하면 앞으로의 생활비와 가용현금 전망을 다시 검토하되, 이미 지난 달에 지출했다고 가정한 돈을 추가로 청구하거나 과거 저축액을 소급 변경하지 않습니다. 주택·양육·은퇴 후 생활비는 각 설계의 별도 기준을 유지합니다.</p>
  </div></details></article>
  <article class="cc-datacard"><div class="hm-minor-heading"><span class="hm-tag model">KOSIS · 검증 전용</span><b>② 임금상승률: 가정과 실제 흐름 비교</b></div>
  ${hmBasis([['활용 자료','KOSIS · 상용근로자 임금 통계'],['현재 보관된 참고 시계열','건설업 · '+wageRef],['보관된 통계 기반 참고 상승률',Number(wage.value).toFixed(2)+'%'],['고객 적용 명목 임금상승률','연 2.5% 고정'],['새 자료 발표 시','통계 추세 확인·2.5% 가정과 비교'],['미래 소득 자동 변경','하지 않음 · 검증용만 수집']])}
@@ -2476,18 +2491,19 @@ function gdConsumptionDataExplanation(){
  <p class="hm-method-reason"><b>검증 기준</b> · 현재 표시한 약 ${Number(wage.value).toFixed(2)}%는 <b>건설업 관련 저장 참고값</b>이며, 전체 상용근로자의 평균 상승률을 대표한다고 단정하지 않습니다. 비교할 때는 명목임금과 명목소득상승률을 같은 기준으로 살펴봐요.</p>
  <p class="hm-method-reason"><b>고정 원칙</b> · 새 임금 통계의 상승률이 2.5%보다 높거나 낮아져도 고객의 미래 명목 임금상승률은 <b>연 2.5%로 유지</b>합니다. 실제 반영 여부는 별도 의사결정 사항입니다.</p>
  </div></details></article></div>
- <div class="cc-implementation"><span class="cc-info-icon" aria-hidden="true">ⓘ</span><div><b>현재 V36 기능과 향후 갱신 원칙은 구분해서 보세요.</b><p>위 내용은 <b>공식 통계가 새로 발표될 때 적용하려는 계산·검증 원칙</b>입니다. 지금 웹은 원본 저장 CPI를 표시하고, 미래 일반소비 계산에는 연 2.5% 경로를 사용합니다. 새 CPI를 외부지표 탭에 기록하면 일부 생활비 <b>민감도 미리보기</b>만 제공하며, 실제 CPI 실측 롤링을 전체 월별 현금흐름에 반영하거나 KOSIS API에서 무인 수집하는 기능은 <b>아직 연결되지 않았습니다.</b> 신규 임금 통계는 미래 소득을 변경하지 않습니다.</p></div></div>
+ <div class="cc-implementation"><span class="cc-info-icon" aria-hidden="true">ⓘ</span><div><b>현재 웹사이트의 계산 범위와 향후 갱신 계획을 구분해 주세요.</b><p>위 내용은 <b>공식 통계가 새로 발표될 때 적용하려는 계산·검증 원칙</b>입니다. 지금 웹은 원본 저장 CPI를 표시하고, 미래 일반소비 계산에는 연 2.5% 경로를 사용합니다. 새 CPI를 외부지표 탭에 기록하면 일부 생활비 <b>민감도 미리보기</b>만 제공하며, 수집된 CPI를 은퇴 전 모든 월별 생활비에 자동 반영하거나 과거 확정 월을 고정하는 기능은 <b>아직 통합 연결되지 않았습니다.</b> 경제지표 수집 자체는 별도 클라우드 수집기가 담당하고 있습니다. 신규 임금 통계는 미래 소득을 변경하지 않습니다.</p></div></div>
  <div class="cc-data-link"><button type="button" class="hm-link-button" data-hm-open-data>경제지표 기준월·수집 이력 살펴보기 ↗</button></div>`;
 }
 
 function gdConsumptionContent(){
  const values=baseSpend(),fixed=spendingTotal(values,'fixed'),variable=spendingTotal(values,'variable'),total=fixed+variable;
  const month=monthInfo('2026-11');const available=Number(month?.income||0)+Number(month?.pension||0)-Number(month?.expense||0),events=spendEvents();
- return `${gdHero('우리 가족 일반소비 계획','사전 수집한 생활비를 기준으로, 앞으로 소비를 조정할 때 현금흐름이 어떻게 달라지는지 살펴봐요.',[['현재 기준 월 일반소비',total,'고정지출 + 변동지출',true],['현재 월 고정지출',fixed,'고정 소비 항목 합계'],['현재 월 변동지출',variable,'변동 소비 항목 합계']],'blue','미래 변경 계획 '+events.length+'건')}
+ return `${gdHero('우리 가족 일반소비 계획','현재 생활비와 시기별 기본 예산을 확인하고, 미래 소비 조정이 현금흐름에 미치는 영향을 시험해 보세요.',[['현재 기준 월 일반소비',total,'고정지출 + 변동지출',true],['현재 월 고정지출',fixed,'고정 소비 항목 합계'],['현재 월 변동지출',variable,'변동 소비 항목 합계']],'blue','미래 변경 시나리오 '+events.length+'건')}
+ <p class="gd-info-text"><b>수정한 기본 생활비 전망</b> · 2026년 11월 월 240만원에서 매월 연 2.5% 복리 가정으로 전망합니다. 예전 구간별 220만·230만원 가정은 근거를 확인하지 못해 기본안에서 제외하고 계산값 비교를 위해 별도 보존했습니다. <b>최신 CPI에 따른 6개월 공식 재설계와 고객 실지출 확정은 아직 연결 전</b>입니다.</p>
  ${gdSection('02 · 소비 구성','한 달 생활비는 어디에 쓰나요?',gdSegmentChart([{name:'고정지출',value:fixed},{name:'변동지출',value:variable}],total,'현재 일반소비 구성')+'<p class="gd-info-text">주택담보대출 원리금과 자녀 양육비는 별도 설계에서 계산되어 일반소비 금액에 중복 포함하지 않아요.</p>')}
  ${gdSection('03 · 현금흐름 전망','지출이 바뀌면 남는 돈도 달라져요',`<div class="gd-two-kpi"><div><span>기준월 총 현금유입</span><b>${COMPACT(Number(month?.income||0)+Number(month?.pension||0))}</b><small>2026년 11월 기준 · 소득 변경 적용 범위 내</small></div><div><span>기준월 저축 전 남는 돈</span><b>${COMPACT(available)}</b><small>별도 필수지출을 포함한 후</small></div></div><p class="gd-info-text">미래 날짜별 소비 변경은 아래에서 계획하고, 저장하면 해당 월부터 전체 월별 현금흐름에 적용됩니다.</p>`)}
  ${gdSection('04 · 외부지표와 갱신 원칙','생활비·임금 데이터는 어떻게 반영하나요?',gdConsumptionDataExplanation(),'생활비 물가는 계산 기준으로 활용하고, 상용근로자 임금 통계는 연 2.5% 소득 가정을 검증하는 참고 자료로만 사용합니다.')}
- ${gdSection('05 · 실행계획','미래 생활비를 조정해 보세요',`<div class="gd-consumption-cta"><div><b>지출을 줄이거나 늘릴 계획이 있나요?</b><p>변경을 시작할 달을 선택하고, 12개 소비항목을 조정한 뒤 결과를 비교할 수 있어요.</p></div><button type="button" class="gd-edit-plan" data-gd-open-spend>미래 생활비 조정하기 ↗</button></div><details class="gd-spend-editor" id="gd-spend-editor" ${gdSpendEditorOpen?'open':''}><summary>생활비 조정 화면 ${events.length?'· 저장된 변경 '+events.length+'건':''} <span aria-hidden="true">⌄</span></summary>${spendingForm()}</details>`)}
+ ${gdSection('05 · 실행계획','미래 생활비를 조정해 보세요 (시뮬레이션)',`<p class="gd-info-text"><b>공식 계획과 실제 지출은 변경되지 않습니다.</b> 선택한 달부터 생활비를 변경하면 현금 부족·누적 잔액이 얼마나 달라지는지 시험합니다. 6개월 정기 재설계에서 고객이 확인하는 실제 최근 생활비는 별도 입력이며, 아직 통합 연결 전입니다.</p><div class="gd-consumption-cta"><div><b>지출을 줄이거나 늘릴 계획이 있나요?</b><p>변경을 시작할 달을 선택하고, 12개 소비항목을 조정한 뒤 결과를 비교할 수 있어요.</p></div><button type="button" class="gd-edit-plan" data-gd-open-spend>미래 생활비 조정하기 ↗</button></div><details class="gd-spend-editor" id="gd-spend-editor" ${gdSpendEditorOpen?'open':''}><summary>생활비 조정 화면 ${events.length?'· 저장된 변경 '+events.length+'건':''} <span aria-hidden="true">⌄</span></summary>${spendingForm()}</details>`)}
  ${gdInsights('일반소비와 목적저축을 구분해 확인하세요.','현재 생활비의 수정은 고객정보에서, 특정 미래시점부터 생활비를 변경하는 것은 이 화면에서 관리합니다.','실제 지출이 달라지면 고객정보의 기준 생활비를 확인하고, 미래 절약·지출 계획은 시작월을 구분해 적용하세요.','은퇴 후 생활비와 은퇴자산은 기존 은퇴설계 가정을 유지합니다.','','06 · 종합 평가')}${gdMethod('소비')}`;
 }
 function consumerSubgoalPage(){return `${heading('GOAL DESIGN','분야별 재무설계','고객님의 재무목표별 자금계획과 미래 전망을 확인해 보세요.')}${gdNav()}${gdSubnav()}<div class="gd-page" data-goal-area="${esc(app.consumeArea)}">${app.consumeArea==='일반소비'?gdConsumptionContent():gdGoalContent(app.consumeArea)}</div>`;}
