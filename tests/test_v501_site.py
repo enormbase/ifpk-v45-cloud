@@ -6,7 +6,7 @@ class V501SiteTest(unittest.TestCase):
     def test_customer_first_view_and_disclosure(self):
         html=(ROOT/'docs/index.html').read_text()
         for label in ['경제지표 변화 한눈에 보기','과거 월별 데이터 확인', '수집·수정 이력 확인',
-                      '가공·추정 계산과 기준 계획값 확인','6개월 재설계 검토와 계획 변경 전후 비교',
+                      '현재 계획과 새 계산값 비교','6개월 재설계 · 6개 분야 변경 전후 검토',
                       '고급 자료·수동 등록·검증 기능']:
             self.assertIn(label,html)
         self.assertIn('function dataPageLegacy()',html)
