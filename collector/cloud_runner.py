@@ -59,7 +59,7 @@ class SupabaseStore:
         self.fetch = fetch or urllib.request.urlopen
 
     def request(self, method, table, params=None, payload=None):
-        if table not in ('ifpk_observations', 'ifpk_collection_runs'):
+        if table not in ('ifpk_observations', 'ifpk_collection_runs', 'ifpk_revisions'):
             raise ValueError('허용되지 않은 DB 테이블')
         url = self.url + '/rest/v1/' + table
         if params:
@@ -115,6 +115,11 @@ class SupabaseStore:
                 seen.add(row['indicator_id']); latest.append(row)
         return latest
 
+    def get_revisions(self):
+        # Server-side only. Never expose database keys or private client data.
+        return self.list_rows('ifpk_revisions', 'detected_at.desc',
+            'indicator_id,month,previous_value,new_value,detected_at,source_updated')
+
     def save_observations(self, records):
         if not records:
             return
@@ -147,6 +152,25 @@ def normalize_public_rows(db_rows):
     output.sort(key=lambda x:(x['id'],x['date']))
     if len({(x['id'],x['date']) for x in output})!=len(output):
         raise ValueError('DB 통계월 중복')
+    return output
+
+
+def normalize_public_revisions(db_rows):
+    """Export the official observation corrections, no private DB internals."""
+    output = []
+    for r in db_rows:
+        indicator = r['indicator_id']
+        if indicator not in ALL_INDICATORS:
+            continue
+        month = valid_month(r['month'])
+        prev = float(r['previous_value'])
+        new = float(r['new_value'])
+        if not (math.isfinite(prev) and math.isfinite(new)):
+            raise ValueError('수정 이력에 유한하지 않은 값이 있습니다')
+        output.append({'id':indicator,'date':month,'previousValue':prev,
+                       'newValue':new,'detectedAt':str(r['detected_at']),
+                       'sourceUpdated':str(r.get('source_updated') or '')})
+    output.sort(key=lambda x:(x['detectedAt'],x['id'],x['date']),reverse=True)
     return output
 
 
@@ -211,7 +235,7 @@ def calculate_estimates(records):
     return output
 
 
-def prepare_snapshots(records, runs, live:bool, collected_at=None):
+def prepare_snapshots(records, runs, live:bool, collected_at=None, revisions=None):
     records=sorted(records,key=lambda x:(x['id'],x['date']))
     estimates=calculate_estimates(records)
     home_impact=calculate_home_impact(estimates)
@@ -223,13 +247,16 @@ def prepare_snapshots(records, runs, live:bool, collected_at=None):
     last=[{'id':x['indicator_id'],'status':x['status'], 'finishedAt':x['finished_at'],
            'fetched':x['fetched'],'inserted':x['inserted'],'revised':x['revised'],'message':x['message']} for x in runs]
     generated=collected_at or utc_now()
-    public={'format':'ifpk-public-indicators','generatedAt':generated,'records':records,'estimates':estimates,'homeImpact':home_impact}
+    sanitized_revisions = normalize_public_revisions(revisions) if revisions is not None else []
+    public={'format':'ifpk-public-indicators','generatedAt':generated,'records':records,'estimates':estimates,'homeImpact':home_impact,
+            'revisions':sanitized_revisions,'revisionHistoryAvailable':revisions is not None}
     status={'format':'ifpk-collector-v45','generatedAt':generated,'published':live,
             'storage':'Supabase PostgreSQL' if live else '로컬 수집자료: 클라우드 미배포 샘플',
             'credentialsConfigured':{'KOSIS':bool(live),'ECOS':bool(live and any(r['id'] in ('DEPOSIT','MORTGAGE') for r in records))},
             'plannedFrequency':'GitHub Actions: 매일 2회 점검 / GitHub 스케줄 실행은 지연될 수 있음',
             'officialPlan':{'sourceSheetId':SOURCE_SHEET_ID,'basis':'2026-11','automaticUpdates':False,'reviewCycleMonths':6},
             'counts':counts,'latestRuns':last,'estimates':estimates,'homeImpact':home_impact,
+            'revisionHistoryAvailable':revisions is not None,'revisionCount':len(sanitized_revisions),
             'notes':'관측월/수집일/배포시각 별개, 수집자료는 6개월 공식계획에 자동반영하지 않음'}
     return public,status
 
@@ -306,7 +333,11 @@ def execute_cloud(store, tasks, timestamp=None):
                        message='공식 API 점검 및 원장 저장 완료',started_at=started)
         outcome.append({'indicator':indicator,'status':'ok','fetched':len(records),'inserted':ins,'revised':rev})
     fresh=normalize_public_rows(store.get_observations())
-    public,status=prepare_snapshots(fresh,store.get_runs(),live=True,collected_at=timestamp)
+    # In a real cloud run read Supabase's immutable audit table. Test stores
+    # and legacy adapters that lack this method publish an explicit unknown flag.
+    revision_reader=getattr(store,'get_revisions',None)
+    revision_rows=revision_reader() if callable(revision_reader) else None
+    public,status=prepare_snapshots(fresh,store.get_runs(),live=True,collected_at=timestamp,revisions=revision_rows)
     publish_snapshot(public,status)
     return outcome
 
@@ -319,7 +350,7 @@ def dry_run(sample_path):
     for row in records:
         if row['id'] not in ALL_INDICATORS:raise ValueError('알 수 없는 지표')
         valid_month(row['date']);float(row['value'])
-    public,status=prepare_snapshots(records,[],live=False)
+    public,status=prepare_snapshots(records,[],live=False,revisions=raw.get('revisions') if raw.get('revisionHistoryAvailable') is True else None)
     publish_snapshot(public,status)
     return len(records)
 
