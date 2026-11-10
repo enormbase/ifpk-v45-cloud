@@ -1,4 +1,4 @@
-/* IFPK V51-2b.1 — read-only, goal-aware rolling scenario projection.
+/* IFPK V51-2b.2 — read-only, goal-aware rolling scenario projection.
  * This module DOES NOT mutate the 605-month source ledger, approve plans, or
  * claim debt-policy/retirement asset recalculation. Observed records and manual
  * hypotheses are reported separately. Unverified purpose balances are labelled.
@@ -45,21 +45,54 @@
     if(gap<=0)return 0;
     return Math.ceil((r<1e-12?gap/n:gap*r/(fv-1))-1e-9);
   }
+  // V51-2b.2: ECOS 901Y009 item CPI is published as index=2020=100,
+  // but the actual collector serializes the unit text as '지수'. Accept this
+  // alias ONLY for a single official ECOS 901Y009 item series with a verified
+  // 2020 calendar-year index average near 100; otherwise freeze its own module.
+  // A different rebasing, mixed item codes or duplicate inconsistent values
+  // must never silently enter the future vehicle/travel budget projection.
   function observedRollingMean(records,id,count,asOf,unit){
     const eligible=(Array.isArray(records)?records:[]).filter(x=>x && x.id===id && monthValid(x.date) && x.date<asOf);
-    for(const r of eligible){
-      if(String(r.unit||'').replace(/\s/g,'')!==unit || !validBounded(Number(r.value),0.00001,1e6))return {ready:false,invalid:true,source:'자료 기준 불일치',reason:`${id}의 기준단위 또는 수치가 달라 계산을 중단했습니다.`};
-    }
+    const itemCpi=id==='CPI_CAR'||id==='CPI_TRAVEL';
+    const unitClean=x=>String(x||'').replace(/\s/g,'');
+    const ecCode=x=>String(x.sourceCode??x.source_code??'').trim();
+    let sawGeneric=false,missingCodes=0;
+    const codes=new Set();
     const dict=new Map();
     for(const r of eligible){
-      const value=Number(r.value);
+      const value=Number(r.value),label=unitClean(r.unit);
+      if(!validBounded(value,.00001,1e6))return {ready:false,invalid:true,reason:`${id} 지수값 범위 검증 실패 · ${r.date}`};
+      if(label!==unitClean(unit)){
+        const trusted=itemCpi&&label==='지수'&&String(r.provider||'').toUpperCase()==='ECOS'&&/^901Y009\/[A-Za-z0-9_]+$/.test(ecCode(r));
+        if(!trusted)return {ready:false,invalid:true,reason:`${id} 기준단위 검증 실패 · ECOS 901Y009 원계열(2020=100) 확인 필요`};
+        sawGeneric=true;
+      }
+      if(itemCpi){
+        const code=ecCode(r);
+        if(code) {
+          if(!/^901Y009\/[A-Za-z0-9_]+$/.test(code))return {ready:false,invalid:true,reason:`${id} ECOS 공식 품목코드 검증 실패`};
+          codes.add(code);
+        } else {
+          missingCodes++;
+        }
+      }
       if(dict.has(r.date)&&Math.abs(dict.get(r.date)-value)>1e-8)return {ready:false,invalid:true,reason:`${id} 동일 통계월 중복 관측값 불일치`};
       dict.set(r.date,value);
+    }
+    if(sawGeneric&&missingCodes>0)return {ready:false,invalid:true,reason:`${id} 수집단위 '지수'의 ECOS 품목코드가 일부 누락되었습니다.`};
+    if(itemCpi&&codes.size>1)return {ready:false,invalid:true,reason:`${id} 서로 다른 공식 품목코드 혼합 · 재검증 필요`};
+    if(sawGeneric){
+      // Never infer base year from a single 2026 value; insist on the full
+      // 2020 index anchor for a generic '지수' label.
+      const base2020=Array.from({length:12},(_,i)=>dict.get('2020-'+String(i+1).padStart(2,'0')));
+      if(!base2020.every(numeric))return {ready:false,invalid:true,reason:`${id} '지수' 자료는 2020년 기준 12개월 관측값 검증 전까지 보류`};
+      const avg=sum(base2020)/12;
+      if(Math.abs(avg-100)>.2)return {ready:false,invalid:true,reason:`${id} 2020년 기준 평균 ${avg.toFixed(2)}로 2020=100 검증 실패`};
     }
     const sorted=[...dict.keys()].sort().reverse();
     for(const date of sorted){
       const values=Array.from({length:count},(_,i)=>dict.get(old.shift(date,-i)));
-      if(values.every(numeric))return {ready:true,date,value:sum(values)/count,months:count,source:`연속 ${count}개월 관측`};
+      if(values.every(numeric))return {ready:true,date,value:sum(values)/count,months:count,source:sawGeneric?`ECOS 901Y009 공식 품목 · 2020=100 기준 확인 · 연속 ${count}개월`:`동일 기준 연속 ${count}개월 관측`};
     }
     return {ready:false,source:'관측자료 부족',reason:`${id}의 동일 기준 연속 ${count}개월 공식 관측값이 필요합니다.`};
   }
@@ -132,17 +165,18 @@
     const override=manual({value:scenarioValue},'value',1,10000);
     if(override.error)return {ready:false,error:`${id}: ${override.error}`};
     const selected=override.entered?{ready:true,date:old.shift(asOf,-1),value:override.value,source:'고객 입력 가정 · MA 값 (공식 미확인)',manual:true}:official;
-    if(official.invalid)return {ready:false,error:official.reason};
+    if(official.invalid)return {ready:false,invalid:true,error:official.reason};
     if(!selected.ready||selected.date<=baseDate)return {ready:false,reason:selected.ready?'기존 기준월보다 새로운 지표가 없어 목표가격 유지':selected.reason,baseValue,officialReady:official.ready};
     const observedMonths=old.between(baseDate,selected.date);
     const correction=selected.value/baseValue/Math.pow(1.025,observedMonths/12);
-    if(!validBounded(correction,.01,10))return {ready:false,error:`${id}: 누적 물가보정배율 검증 실패`};
+    if(!validBounded(correction,.01,10))return {ready:false,invalid:true,error:`${id}: 누적 물가보정배율 검증 실패`};
     return {...selected,ready:true,correction,observedMonths,baseValue,officialReady:official.ready};
   }
   function buildEnvironment(records,asOf,opts){
     const scenarios=opts.scenarios||{}, out={};
     const optDeposit=manual(scenarios,'depositRate',0,30),optMort=manual(scenarios,'mortgageRate',0,30),optHousing=manual(scenarios,'homeGrowth',-40,40);
     for(const x of [optDeposit,optMort,optHousing])if(x.error)return {ready:false,reason:x.error};
+    for(const id of ['carMA3','travelMA12']){const m=manual(scenarios,id,1,10000);if(m.error)return {ready:false,reason:m.error};}
     const depositObserved=observedRates(records,'DEPOSIT',60,asOf);
     if(depositObserved.invalid)return {ready:false,reason:depositObserved.reason};
     const depRate=optDeposit.entered?optDeposit.value:depositObserved.ready?depositObserved.value:3.1075;
@@ -162,7 +196,12 @@
     out.homeGrowth={value:out.homeBlocked?HOME_BASE.growth:optHousing.entered?optHousing.value:hg.ready?hg.annualPct:HOME_BASE.growth,source:out.homeBlocked?'R-ONE 기준 불일치 · 주택만 계산 보류':optHousing.entered?'시험 입력 · 연간 주택가격 변동률':hg.ready?hg.source:'기존 R-ONE 추정률 유지 (새 동일기준 121개월 자료 없음)',updated:!out.homeBlocked&&(optHousing.entered||hg.ready),observed:hg};
     out.car=indexInfo(records,'CPI_CAR',3,CAR_INDEX_BASE.index,CAR_INDEX_BASE.indexMonth,asOf,scenarios.carMA3);
     out.travel=indexInfo(records,'CPI_TRAVEL',12,TRIP_BASE.index,TRIP_BASE.indexMonth,asOf,scenarios.travelMA12);
-    for(const x of [out.car,out.travel])if(x.error)return {ready:false,reason:x.error};
+    // Isolate CPI_CAR and CPI_TRAVEL faults: general CPI and unrelated goals
+    // still calculate, while the unverified affected goal is frozen.
+    out.carBlocked=Boolean(out.car.invalid||out.car.error);
+    out.travelBlocked=Boolean(out.travel.invalid||out.travel.error);
+    out.carWarning=out.carBlocked?(out.car.error||out.car.reason):null;
+    out.travelWarning=out.travelBlocked?(out.travel.error||out.travel.reason):null;
     return {ready:true,...out};
   }
   function estimateFunds(snapshot,asOf,opts,env){
@@ -188,7 +227,11 @@
     if([homeOwn,newHousePrice,oldNet,carPrice,carLoan,carPay,mortgagePay,tripPrice].some(v=>!validBounded(v,0,moneyMax)))return {ready:false,reason:'목표가격 또는 대출 추정값 검증 실패'};
     const amounts={house:homeOwn,car:CAR_BASE.own,travel:tripPrice};
     for(const [key,def] of Object.entries(GOALS)){
-      if(key==='house'&&env.homeBlocked){overview[key]={active:false,blocked:true,label:def.label,date:def.date,reason:'R-ONE 기준 검증 필요 · 주택 자기자금/월저축 재계산 보류(기존 계획 유지)'};continue;}
+      const indexBlocked=(key==='house'&&env.homeBlocked)||(key==='car'&&env.carBlocked)||(key==='travel'&&env.travelBlocked);
+      if(indexBlocked){
+        const why=key==='house'?'R-ONE':key==='car'?'CPI_CAR':'CPI_TRAVEL';
+        overview[key]={active:false,blocked:true,label:def.label,date:def.date,reason:`${why} 지수 검증 필요 · 해당 분야의 가격·월저축 재계산 보류(기존 계획 유지)`};continue;
+      }
       const remain=old.between(asOf,def.date);
       if(remain<=0){overview[key]={active:false,label:def.label,date:def.date,reason:'목표월 경과 · 실집행 확인 필요'};continue;}
       const b=old.estimateBalance(snapshot,key,asOf,balanceInputs[key]);if(!b.ready)return {ready:false,reason:b.reason};
@@ -280,7 +323,7 @@
     const afterRet=monthlyResults[RETIRE];
     return {ready:true,partial:true,mayApprove:false,scope:'은퇴 전 월별 소비·목적저축·이벤트 계좌전입·차량할부·주택 신규대출 비용 시험',
       asOf,cpi,environment:env,finance:fin,goals:scenarioGoals,examples,monthlyResults,eventAudit,
-      partialModules:env.homeBlocked?['주택: R-ONE 동일 기준 검증 대기']:[],
+      partialModules:[...(env.homeBlocked?['주택: R-ONE 동일 기준 검증 대기']:[]),...(env.carBlocked?['자동차: CPI_CAR 지수 기준 검증 대기']:[]),...(env.travelBlocked?['해외여행: CPI_TRAVEL 지수 기준 검증 대기']:[])],
       expenseSource:'2026.11 일반생활비 240만원·연 2.5% 기준 재기준화',
       baselineCashAtReview:monthlyResults[asOf].baselineCash,previewCashAtReview:monthlyResults[asOf].previewCash,
       retirementEve:monthlyResults[old.shift(RETIRE,-1)],retirementAfterExcluded:afterRet.previewCash===null,

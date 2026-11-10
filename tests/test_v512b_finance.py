@@ -149,7 +149,7 @@ def test_web_wiring_and_official_lock():
     assert 'src="./js/rolling_preview_v512a.js"' in s
     assert 'src="./js/rolling_projection_v512b.js"' in s
     assert 'IFPK_V512B.compute(INITIAL_MONTHLY' in s
-    assert 'V51-2b.1 · 은퇴 전 롤링 검토 · 공식 계획 미변경' in s
+    assert 'V51-2b.2 · 은퇴 전 롤링 검토 · 공식 계획 미변경' in s
     assert '공식 계획 적용은 잠금 상태' in s
     assert '2026년 11월 월 생활비 240만원' in s
     assert 'data-v512-field="carMA3"' not in s  # field ids produced dynamically by makeInput
@@ -171,9 +171,9 @@ console.log('ok');''')
 
 
 def test_conflicting_index_or_interest_basis_is_rejected_not_passed_as_official():
-    out=node(HEAD+'''assert.equal(v.compute(book,[{id:'CPI_CAR',date:'2027-04',value:120,unit:'2025=100'}],{asOf:'2027-05'}).ready,false);
+    out=node(HEAD+'''const bad=v.compute(book,[{id:'CPI_CAR',date:'2027-04',value:120,unit:'2025=100'}],{asOf:'2027-05'});assert.equal(bad.ready,true);assert.equal(bad.environment.carBlocked,true);assert.equal(bad.goals.car.active,false);
 assert.equal(v.compute(book,[{id:'DEPOSIT',date:'2027-04',value:3.8,unit:'bp'}],{asOf:'2027-05'}).ready,false);
 const same=[{id:'CPI_CAR',date:'2027-04',value:120,unit:'2020=100'},{id:'CPI_CAR',date:'2027-04',value:122,unit:'2020=100'}];
-assert.equal(v.compute(book,same,{asOf:'2027-05'}).ready,false);
+const duplicate=v.compute(book,same,{asOf:'2027-05'});assert.equal(duplicate.ready,true);assert.equal(duplicate.environment.carBlocked,true);
 console.log('ok');''')
     assert out=='ok'
