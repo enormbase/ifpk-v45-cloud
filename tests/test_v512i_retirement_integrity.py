@@ -79,7 +79,7 @@ def test_reject_stale_wrong_model_or_fake_select_value():
 
 def test_web_wiring_and_minimal_customer_ui():
  assert 'V51-2k' in HTML
- assert 'LIFE PLAN STUDIO · IFPK V51-3d' in HTML
+ assert 'LIFE PLAN STUDIO · IFPK V51-3f' in HTML
  assert HTML.index('cashflow_audit_v512h.js')<HTML.index('retirement_integrity_v512i.js')
  assert '⑫ 은퇴자산 중복 계산 확인' in HTML
  assert 'retAssetOrigin' in HTML and 'retAssetUsability' in HTML

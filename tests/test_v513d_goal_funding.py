@@ -1,4 +1,4 @@
-"""V51-3d goal-account buffer, monthly extra savings, and immutability tests."""
+"""V51-3e goal-account buffer, monthly extra savings, and immutability tests."""
 import subprocess,re
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -32,6 +32,6 @@ def test_modified_event_month_rejects_source_inconsistency():
     node(PREFIX+"""s['2034-10'][14]-=100;const a=p.project(s,rev,{goal:'car'});assert.equal(a.ready,false);""")
 
 def test_html_contains_functional_controls_and_review_json():
-    for fragment in ['V51-3d','goal_funding_v513d.js','v513d-goal-audit','data-v513d-recalc','goalFundingPreview:goalImpact','goalImpact=IFPK_V513D.project']:
+    for fragment in ['V51-3e','goal_funding_v513d.js','v513d-goal-audit','data-v513d-recalc','goalFundingPreview:goalImpact','goalImpact=IFPK_V513D.project']:
         assert fragment in H
     assert 'tests/test_v511_replan.py' not in H

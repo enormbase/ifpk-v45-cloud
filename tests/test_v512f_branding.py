@@ -5,12 +5,12 @@ HTML = (Path(__file__).resolve().parents[1] / "docs" / "index.html").read_text(e
 
 class VersionDisplayTest(unittest.TestCase):
     def test_topbar(self):
-        self.assertIn("LIFE PLAN STUDIO · IFPK V51-3d", HTML)
+        self.assertIn("LIFE PLAN STUDIO · IFPK V51-3f", HTML)
         self.assertNotIn("LIFE PLAN STUDIO · IFPK V51-2e", HTML)
 
     def test_title_and_footer(self):
-        self.assertIn("대시보드 V51-3d</title>", HTML)
-        self.assertIn("V51-3d 목적자금·대출·은퇴자산", HTML)
+        self.assertIn("대시보드 V51-3f</title>", HTML)
+        self.assertIn("V51-3f 고객용 재설계 현황", HTML)
 
     def test_module_present(self):
         self.assertIn("./js/debt_retirement_v512f.js", HTML)
