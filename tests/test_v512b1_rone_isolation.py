@@ -58,4 +58,4 @@ def test_ui_discloses_house_only_hold_and_keeps_readonly():
     s=HTML.read_text(encoding='utf8')
     assert '주택 항목만 계산 보류' in s
     assert '전국 CPI·일반소비와 다른 정상 분야 미리보기는 계속 계산할 수 있어' in s
-    assert 'V51-2b.2 · 은퇴 전 롤링 검토 · 공식 계획 미변경' in s
+    assert 'V51-2c · 은퇴 전 롤링 검토 · 공식 계획 미변경' in s

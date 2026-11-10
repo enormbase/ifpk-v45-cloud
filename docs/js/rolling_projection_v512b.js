@@ -5,12 +5,14 @@
  */
 (function (root, factory) {
   const base = root?.IFPK_V512A || (typeof module === 'object' && module.exports ? require('./rolling_preview_v512a.js') : null);
-  const api = factory(base);
+  const lending = root?.IFPK_V512C_LOAN || (typeof module === 'object' && module.exports ? require('./loan_scenarios_v512c.js') : null);
+  const api = factory(base, lending);
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.IFPK_V512B = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (old) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (old, lending) {
   'use strict';
   if (!old) throw new Error('V51-2a calculation module must load first');
+  if (!lending) throw new Error('V51-2c lending scenario module must load first');
   const START = old.START, END = old.END, RETIRE = old.RETIRE, GOALS = old.GOALS;
   const HOME_MOVE = '2046-10', CAR_BUY = '2034-10', TRIP = '2038-10';
   const HOME_BASE = Object.freeze({
@@ -178,20 +180,22 @@
     for(const x of [optDeposit,optMort,optHousing])if(x.error)return {ready:false,reason:x.error};
     for(const id of ['carMA3','travelMA12']){const m=manual(scenarios,id,1,10000);if(m.error)return {ready:false,reason:m.error};}
     const depositObserved=observedRates(records,'DEPOSIT',60,asOf);
-    if(depositObserved.invalid)return {ready:false,reason:depositObserved.reason};
+    out.depositBlocked=Boolean(depositObserved.invalid);
+    out.depositWarning=out.depositBlocked?depositObserved.reason:null;
     const depRate=optDeposit.entered?optDeposit.value:depositObserved.ready?depositObserved.value:3.1075;
     out.deposit={value:depRate,annualNet:depRate/100*.846,source:optDeposit.entered?'시험 입력 · 세전 연%':depositObserved.ready?`ECOS ${depositObserved.date} 최근 60개월 평균`:'기존 ECOS 저장 가정 유지 (새 60개월 자료 없음)',updated:optDeposit.entered||depositObserved.ready};
     const m60=observedRates(records,'MORTGAGE',60,asOf),m120=observedRates(records,'MORTGAGE',120,asOf);
-    if(m60.invalid||m120.invalid)return {ready:false,reason:(m60.invalid?m60:m120).reason};
-    const mortObserved=m60.ready&&m120.ready?(.7*m60.value+.3*m120.value):null;
+    out.mortgageBlocked=Boolean(m60.invalid||m120.invalid);
+    out.mortgageWarning=out.mortgageBlocked?(m60.invalid?m60:m120).reason:null;
+    const mortObserved=!out.mortgageBlocked&&m60.ready&&m120.ready?(.7*m60.value+.3*m120.value):null;
     const mortRate=optMort.entered?optMort.value:mortObserved!==null?mortObserved:HOME_BASE.interest;
     out.mortgage={value:mortRate,source:optMort.entered?'시험 입력 · 연%':mortObserved!==null?`ECOS ${m120.date} 기준 5년 70%·10년 30%`:'기존 약정금리 추정 유지 (새 120개월 자료 없음)',updated:optMort.entered||mortObserved!==null};
     const hg=homeGrowth(records,asOf),homeRealized=observedHomeMovement(records,asOf);
     // Fault isolation: a disputed home-price series must not prevent a general CPI
     // or car/travel scenario. Freeze house amounts, monthly saving and mortgage
     // until the R-ONE vintage is repaired; never silently approve the old series.
-    out.homeBlocked=Boolean(hg.invalid||homeRealized.error);
-    out.homeWarning=out.homeBlocked?(homeRealized.error||hg.reason||'R-ONE 동일기준 검증 실패'):null;
+    out.homeBlocked=Boolean(hg.invalid||homeRealized.error||out.mortgageBlocked);
+    out.homeWarning=out.homeBlocked?(out.mortgageWarning||homeRealized.error||hg.reason||'R-ONE 동일기준 검증 실패'):null;
     out.homeActual=out.homeBlocked?{ready:false,reason:out.homeWarning}:homeRealized;
     out.homeGrowth={value:out.homeBlocked?HOME_BASE.growth:optHousing.entered?optHousing.value:hg.ready?hg.annualPct:HOME_BASE.growth,source:out.homeBlocked?'R-ONE 기준 불일치 · 주택만 계산 보류':optHousing.entered?'시험 입력 · 연간 주택가격 변동률':hg.ready?hg.source:'기존 R-ONE 추정률 유지 (새 동일기준 121개월 자료 없음)',updated:!out.homeBlocked&&(optHousing.entered||hg.ready),observed:hg};
     out.car=indexInfo(records,'CPI_CAR',3,CAR_INDEX_BASE.index,CAR_INDEX_BASE.indexMonth,asOf,scenarios.carMA3);
@@ -215,21 +219,31 @@
     const newHousePrice=Math.round(HOME_BASE.newPrice*totalHomeFactor);
     const oldGross0=HOME_BASE.currentOldPrice*Math.pow(1+HOME_BASE.growth/100,240/12);
     const oldNet=Math.round(HOME_BASE.oldNet+oldGross0*(totalHomeFactor-1));
-    const loan=HOME_BASE.loan;
-    let homeOwn=Math.max(0,newHousePrice-oldNet-loan);
+    const loanScenario=String(opts.scenarios?.borrowingCase||'base');
+    if(!Object.hasOwn(lending.CASES,loanScenario))return {ready:false,reason:'LTV/DSR 비교 시나리오가 올바르지 않습니다.'};
+    const loanEstimate=env.homeBlocked||asOf>HOME_MOVE?null:lending.assess(newHousePrice,env.mortgage.value,oldNet,loanScenario);
+    if(loanEstimate&&!loanEstimate.ready)return {ready:false,reason:loanEstimate.reason};
+    let loan=loanEstimate?loanEstimate.chosen.maxLoan:HOME_BASE.loan;
     const manualHome=manual(opts,'houseGoal',0,moneyMax);if(manualHome.error)return {ready:false,reason:manualHome.error};
-    if(manualHome.entered&&!env.homeBlocked)homeOwn=manualHome.value;
+    if(manualHome.entered&&!env.homeBlocked&&asOf<=HOME_MOVE){
+      // A customer's proposed equity amount must not imply a mortgage above
+      // the modeled lending cap. Keep the funding identity coherent.
+      const wantLoan=Math.max(0,Math.round(newHousePrice-oldNet-manualHome.value));
+      if(wantLoan>loan+1)return {ready:false,reason:'입력한 주택 자기자금은 현재 선택한 LTV/DSR 대출한도에서 필요한 최소 자기자금보다 적습니다.'};
+      loan=Math.min(loan,wantLoan);
+    }
+    const homeOwn=Math.max(0,Math.round(newHousePrice-oldNet-loan));
     const carPrice=asOf<=CAR_BUY&&env.car.ready?Math.round(CAR_BASE.price*env.car.correction):CAR_BASE.price;
     const carLoan=Math.max(0,carPrice-CAR_BASE.resale-CAR_BASE.own);
     const carPay=futurePayment(carLoan,CAR_BASE.interest,CAR_BASE.term);
-    const mortgagePay=env.homeBlocked || asOf>HOME_MOVE || !env.mortgage.updated || Math.abs(env.mortgage.value-HOME_BASE.interest)<1e-10 ? HOME_BASE.existingLoanMonthly : futurePayment(loan,env.mortgage.value,360);
+    const mortgagePay=env.homeBlocked||asOf>HOME_MOVE||(loan===HOME_BASE.loan && Math.abs(env.mortgage.value-HOME_BASE.interest)<1e-10)?HOME_BASE.existingLoanMonthly:futurePayment(loan,env.mortgage.value,360);
     const tripPrice=asOf<=TRIP&&env.travel.ready?Math.round(TRIP_BASE.price*env.travel.correction):TRIP_BASE.price;
     if([homeOwn,newHousePrice,oldNet,carPrice,carLoan,carPay,mortgagePay,tripPrice].some(v=>!validBounded(v,0,moneyMax)))return {ready:false,reason:'목표가격 또는 대출 추정값 검증 실패'};
     const amounts={house:homeOwn,car:CAR_BASE.own,travel:tripPrice};
     for(const [key,def] of Object.entries(GOALS)){
-      const indexBlocked=(key==='house'&&env.homeBlocked)||(key==='car'&&env.carBlocked)||(key==='travel'&&env.travelBlocked);
+      const indexBlocked=env.depositBlocked||(key==='house'&&env.homeBlocked)||(key==='car'&&env.carBlocked)||(key==='travel'&&env.travelBlocked);
       if(indexBlocked){
-        const why=key==='house'?'R-ONE':key==='car'?'CPI_CAR':'CPI_TRAVEL';
+        const why=env.depositBlocked?'ECOS 예·적금 금리':key==='house'?'R-ONE/주담대 금리':key==='car'?'CPI_CAR':'CPI_TRAVEL';
         overview[key]={active:false,blocked:true,label:def.label,date:def.date,reason:`${why} 지수 검증 필요 · 해당 분야의 가격·월저축 재계산 보류(기존 계획 유지)`};continue;
       }
       const remain=old.between(asOf,def.date);
@@ -242,10 +256,10 @@
     }
     return {ready:true,goals:overview,finance:{
        homePrice:newHousePrice,oldHomeNet:oldNet,loan,own:homeOwn,homeMonthly:mortgagePay,homeMonthlyBefore:HOME_BASE.existingLoanMonthly,
-       homeBasis:env.homeBlocked?'R-ONE 새 기준 검증 실패 · 주택가격/주택저축/주택담보대출 변경 계산 보류 · 기존 기준만 표시':manualHome.entered?'주택 필요자기자금 시험 입력 · 시세/순매각·대출 일관성 검토 필요':env.homeActual.ready||env.homeGrowth.updated?'실측 경과분/미래 주택가격 변동률 반영 · 신규 대출한도는 기존 가정 유지':'기존 주택가격·대출원금 가정 유지',
+       homeBasis:env.homeBlocked?'R-ONE/주담대 금리 검증 필요 · 주택가격·대출·저축 재계산만 보류':manualHome.entered?'고객 가정의 주택 자기자금: 선택한 규제 한도 안에서 대출원금을 조정(실제 금융기관 승인 아님)':env.homeActual.ready||env.homeGrowth.updated||env.mortgage.updated?'주택가격 실측·추정 및 기준 대출한도 환산모형 연동':'원본 대출상환여력 기준의 규제 한도 추정(기준값 복원)',
        carPrice,carLoan,carMonthly:carPay,carMonthlyBefore:CAR_BASE.monthlyPayment,carResale:CAR_BASE.resale,
        tripPrice,depositNet:env.deposit.annualNet,
-       loanConstraintRecomputed:false
+       loanConstraintRecomputed:Boolean(loanEstimate), borrowing:loanEstimate, selectedBorrowingCase:loanScenario, actualEligibilityVerified:false
     }};
   }
   function compute(snapshot,records,opts={}){
@@ -303,9 +317,10 @@
       }
       const baseNet=row[6]-legacyRebase;
       const baseChange=baseNet-sum(row.slice(7,11))+row[14]+row[15];
+      const deltaNetMonthly=after?expenseChange+savDelta+eventChange-transferChange:0;
       cash.baseline=Math.round(cash.baseline+baseChange);
       // Retirement withdrawal assumptions remain fixed: do not report post-retirement results as verified.
-      cash.preview=Math.round(cash.preview+baseChange-(after?expenseChange+savDelta+eventChange-transferChange:0));
+      cash.preview=Math.round(cash.preview+baseChange-deltaNetMonthly);
       if(preRet){if(cash.baseline<0)deficitBase++;if(cash.preview<0)deficitScenario++;}
       const x={month,previewEligible:preRet,baselineCash:cash.baseline,previewCash:preRet?cash.preview:null,
         baselineExpense:row[2]+legacyRebase,previewExpense:preRet?row[2]+legacyRebase+(after?expenseChange:0):null,
@@ -313,7 +328,8 @@
         basePurposeSave:[row[8],row[9],row[10]],previewPurposeSave:newSavings.slice(1),
         loanPaymentChange:after?deltaCarPayment+deltaHomePayment:0,
         houseBalance:account.house??null,carBalance:account.car??null,travelBalance:account.travel??null,
-        directEventFundingGap:Math.max(0,eventChange-transferChange)
+        directEventFundingGap:Math.max(0,eventChange-transferChange),
+        baselineMonthlyCashflow:Math.round(baseChange),previewMonthlyCashflow:preRet?Math.round(baseChange-deltaNetMonthly):null
       };
       monthlyResults[month]=x;
       if(sampleMonths.has(month))examples.push(x);
@@ -321,16 +337,24 @@
     const checks=eventAudit.filter(e=>e.unfunded>0);
     const changedPeriods=Object.values(monthlyResults).filter(r=>r.previewEligible&&r.month>=asOf&&((r.previewCash!==r.baselineCash)||(r.previewExpense!==r.baselineExpense))).length;
     const afterRet=monthlyResults[RETIRE];
+    const retirementEve=monthlyResults[old.shift(RETIRE,-1)];
+    const preRetirementLink={month:old.shift(RETIRE,-1),baselineCash:retirementEve.baselineCash,previewCash:retirementEve.previewCash,
+      change:retirementEve.previewCash-retirementEve.baselineCash,
+      unfundedIfNegative:Math.max(0,-retirementEve.previewCash),
+      retirementAssetsRecalculated:false,
+      note:'은퇴 전 누적 일반현금의 조건부 변화만 계산. DC·IRP·국민연금·은퇴 후 필요자금/준비자산은 변경하지 않음'};
     return {ready:true,partial:true,mayApprove:false,scope:'은퇴 전 월별 소비·목적저축·이벤트 계좌전입·차량할부·주택 신규대출 비용 시험',
       asOf,cpi,environment:env,finance:fin,goals:scenarioGoals,examples,monthlyResults,eventAudit,
-      partialModules:[...(env.homeBlocked?['주택: R-ONE 동일 기준 검증 대기']:[]),...(env.carBlocked?['자동차: CPI_CAR 지수 기준 검증 대기']:[]),...(env.travelBlocked?['해외여행: CPI_TRAVEL 지수 기준 검증 대기']:[])],
+      preRetirementLink,
+      partialModules:[...(env.depositBlocked?['목적저축: ECOS 예·적금 금리 기준 검증 대기']:[]),...(env.mortgageBlocked?['주택: ECOS 주담대 금리 기준 검증 대기']:[]),...(env.homeBlocked?['주택: R-ONE 동일 기준 검증 대기']:[]),...(env.carBlocked?['자동차: CPI_CAR 지수 기준 검증 대기']:[]),...(env.travelBlocked?['해외여행: CPI_TRAVEL 지수 기준 검증 대기']:[])],
       expenseSource:'2026.11 일반생활비 240만원·연 2.5% 기준 재기준화',
       baselineCashAtReview:monthlyResults[asOf].baselineCash,previewCashAtReview:monthlyResults[asOf].previewCash,
-      retirementEve:monthlyResults[old.shift(RETIRE,-1)],retirementAfterExcluded:afterRet.previewCash===null,
+      retirementEve,retirementAfterExcluded:afterRet.previewCash===null,
       changedPeriods,baselineDeficitMonths:deficitBase,previewDeficitMonths:deficitScenario,
       eventShortfalls:checks,ledgerVerified:valid.months,
       notices:[
-        '주택 LTV·DSR 신규 한도 계산 및 기존 주담대 최신 잔액 재산정은 수행하지 않았습니다. 신규대출 원금은 기존 가정을 유지합니다.',
+        'LTV/DSR 대출한도는 원본 기준 40% DSR 대출가능액에서 역산한 상환여력의 조건부 시나리오입니다. 실제 고객 소득·기존 채무·스트레스 DSR·금융기관 심사는 미반영입니다.',
+        '기존 주담대의 실제 잔액과 신규대출 계약가능 금액은 검증하지 않았습니다.',
         '자동차 중고차 매각시세는 신규 검증자료가 없어 기존 추정값을 유지합니다.',
         '목적저축 실제 잔액을 입력하더라도 과거 일반계좌와의 자금 출처 대사는 하지 않았습니다.',
         '은퇴 후 현금흐름·필요 일시금·DC/국민연금/건보료·은퇴 투자자산은 재계산하지 않습니다.',
