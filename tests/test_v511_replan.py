@@ -40,7 +40,9 @@ assert.equal(sim.ready,true);assert.equal(sim.partial,true);
 assert.equal(sim.months,605);assert.equal(sim.inputs.deltaSave,40543);
 assert.equal(sim.inputs.deltaEvent,11503119);
 assert.equal(sim.finalCashDelta,-40543*239);
-assert.equal(sim.baseDeficitCount,66);
+// The base is the currently approved 605-month ledger, not the obsolete V51.1 fixture.
+const baselineDeficits=Object.entries(snapshot).filter(([month,row])=>month<'2056-04' && row[16]<0).length;
+assert.equal(sim.baseDeficitCount,baselineDeficits);
 assert.ok(sim.deficitCount>=sim.baseDeficitCount);
 assert.equal(snapshot['2026-11'][8],345345);assert.equal(old,JSON.stringify(snapshot));
 assert.equal(sim.projected['2026-11'].houseSave,385888);
