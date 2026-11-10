@@ -1,4 +1,4 @@
-"""V51-2d: 6-month execution diagnostics; never auto-fund missing cash."""
+"""V51-2e: 6-month execution diagnostics; never auto-fund missing cash."""
 from pathlib import Path
 import json, re, subprocess
 ROOT=Path(__file__).resolve().parents[1]
@@ -83,7 +83,7 @@ def test_ltv_dsr_scenario_does_not_claim_customer_debt_underwriting():
 
 def test_semantics_version_label_and_script_order():
     html=INDEX.read_text('utf-8')
-    assert 'V51-2d' in html
+    assert 'V51-2e' in html
     assert 'affordability_v512d.js' in html
     assert html.index('rolling_projection_v512b.js')<html.index('affordability_v512d.js')
     assert '고객 재무정보 확인·추가 입력' in html
