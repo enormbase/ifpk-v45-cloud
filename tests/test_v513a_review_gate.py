@@ -30,7 +30,7 @@ const trial=rev.prepare(snap,check,preview,afford,dates,h.audit(snap,bridge),neu
     return r.stdout.strip()
 
 def test_version_placement_and_local_only_disclaimers():
-    for txt in ['LIFE PLAN STUDIO · IFPK V51-3f','review_decisions_v513a.js','v513DecisionPanel()',
+    for txt in ['LIFE PLAN STUDIO · IFPK V51-4','review_decisions_v513a.js','v513DecisionPanel()',
                 '공식 변경 미적용','검토 결정만 저장','공식 계획 잠금 유지','data-v513-export']:
         assert txt in HTML
     assert HTML.index('source_audit_v512k.js') < HTML.index('review_decisions_v513a.js')

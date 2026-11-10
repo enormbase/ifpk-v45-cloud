@@ -30,9 +30,9 @@ def test_approved_status_never_marked_applied_even_with_trial():
  assert.equal(s.review.deltaCash,-257364);assert.equal(s.review.officialApplied,false);assert.equal(s.policy.retirementParametersFixed,true);''')
 
 def test_main_tab_and_developer_details_separated():
- for k in ['IFPK V51-3f','replan_hub_v513f.js','v513fHubPanel()','id="v513f-hub"','id="v513f-deep"','data-v513f-open-details','V513F_ADVANCED_OPEN','v512PreviewPanel()','v513DecisionPanel()']:
+ for k in ['IFPK V51-4','replan_hub_v513f.js','v513fHubPanel()','id="v513f-hub"','id="v513f-deep"','data-v513f-open-details','V513F_ADVANCED_OPEN','v512PreviewPanel()','v513DecisionPanel()']:
   assert k in HTML,k
- assert 'V51-3f · 수집·재설계 현황' in HTML
+ assert 'V51-4 · 수집·재설계 준비 현황' in HTML
  assert 'v513fHubPanel()' in HTML[HTML.index('function dataPage(){'):HTML.index('function checkPage(){')]
  assert "const FULL_MONTHLY=Object.fromEntries(" in HTML
  assert '월별 자료 수집·저장과 6개월 공식 재설계' in HTML
