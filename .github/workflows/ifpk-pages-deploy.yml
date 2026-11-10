@@ -1,0 +1,54 @@
+name: IFPK | Website deploy (reuse last verified indicators)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+      - '.github/scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Serialize with scheduled indicator collection to avoid overwriting a newer Pages deploy.
+concurrency:
+  group: ifpk-public-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy-website:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Preserve latest successful public observations
+        run: python .github/scripts/preserve_pages_data.py
+
+      - name: Prepare GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload public site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

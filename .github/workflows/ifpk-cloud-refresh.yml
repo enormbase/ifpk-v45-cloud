@@ -1,14 +1,7 @@
-name: IFPK V45 economic indicators cloud refresh and Pages deploy
+name: IFPK | Official indicators refresh and Pages deploy
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'collector/**'
-      - 'docs/**'
-      - 'supabase/**'
-      - '.github/workflows/**'
   schedule:
     # UTC 03:17 and 14:17 = KST 12:17 and 23:17.
     - cron: '17 3,14 * * *'
