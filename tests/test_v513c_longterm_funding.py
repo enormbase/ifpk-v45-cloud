@@ -1,4 +1,4 @@
-"""V51-3c — benchmark 605-month sensitivity and strict immutability."""
+"""V51-3d — benchmark 605-month sensitivity and strict immutability."""
 import subprocess,re
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -20,7 +20,7 @@ let review={ready:true,payload:{asOf,comparison:comp,officialApplied:false}};
 """
 
 def test_policy_ui_and_version():
- for t in ['V51-3c','longterm_cash_v513c.js','장기 일반현금 부족 영향','장기 영향 시험 계산','공식 계획 미적용']:
+ for t in ['V51-3d','longterm_cash_v513c.js','장기 일반현금 부족 영향','장기 영향 시험 계산','공식 계획 미적용']:
   assert t in HTML
 
 def test_zero_change_reproduces_authoritative_negative_months():
