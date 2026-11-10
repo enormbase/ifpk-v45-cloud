@@ -1,4 +1,4 @@
-"""V51-2j: mortgage excluded from inflation, included only during its term.
+"""V51-2k: mortgage excluded from inflation, included only during its term.
 The official Google Sheet backing formulas were updated separately; these tests
 verify the bundled website has the same 252-month payoff reference and 605-month
 cash conservation, without treating manual customer inputs as approvals.
@@ -34,7 +34,7 @@ def test_no_double_count_monthly_sheet_columns():
     for key in ['2056-04','2057-01','2076-10','2076-11','2077-03']:
         r=RET[key];m=LEDGER[key]
         assert abs(m[2]-(r[0]+r[2]))<=1
-        assert abs(m[6]-(m[0]-m[2]-m[3]-m[4]-m[5]))<=1
+        assert abs(m[6]-(m[0]+m[1]-m[2]-m[3]-m[4]-m[5]))<=1
         assert m[15]==r[3]
         assert abs(m[1]+m[15]-m[2])<=1
         assert abs(r[4]-(MODEL['metrics']['finalRetirement'] if key=='2077-03' else r[4]))<=1
@@ -43,7 +43,7 @@ def test_pension_kept_as_inflow_only_once():
     d='2076-11';r=RET[d];m=LEDGER[d]
     assert m[1]==r[1]
     assert r[3]==round(r[0]+r[2]-r[1])
-    assert m[0]==r[1]
+    assert m[0]==0  # pension must not also appear as wage/support inflow
     assert m[6]==-r[3]
 
 def test_model_financial_totals_updated_without_dc_addition():

@@ -1,4 +1,4 @@
-"""V51-2j.1 360-payment first/last month calendar and cross-tab ledger checks."""
+"""V51-2k 360-payment first/last month calendar and cross-tab ledger checks."""
 from pathlib import Path
 import json,re,subprocess
 ROOT=Path(__file__).resolve().parents[1]
@@ -24,14 +24,14 @@ def test_605_month_baseline_conservation():
 
 def test_house_move_month_is_zero_debt_repayment_and_next_month_first():
     oct=MONTHLY['2046-10'];nov=MONTHLY['2046-11'];sep=MONTHLY['2046-09']
-    assert oct[2]==4204543
-    assert nov[2]==5879862
-    assert nov[2]-oct[2]==1675319
+    assert oct[2]==4958562
+    assert nov[2]==6641965
+    assert nov[2]-oct[2]-1675319==8084  # nonmortgage living expenses also evolve
     assert oct[6]==oct[0]-oct[2]-oct[3]-oct[4]-oct[5]
     assert nov[6]==nov[0]-nov[2]-nov[3]-nov[4]-nov[5]
-    assert oct[16]==120423634
-    assert sep[16]==118826126
-    assert nov[16]==120345824
+    assert oct[16]==-6994308
+    assert sep[16]==-7837797
+    assert nov[16]==-7834223
     assert oct[3]==141486810 and oct[14]==oct[3] # no double cash deduction for home saving transfer
     assert next(r for r in MODEL['monthly'] if r[0]=='2046-10')[1]==oct
 
@@ -58,12 +58,12 @@ def test_customer_goal_rollover_and_6_tab_visibility():
     assert "['data','경제지표·설계 갱신']" in HTML
     assert "['checks','AI 검증·갱신']" in HTML
     assert "newLoanCalendarRibbon(app.tab)+" in HTML
-    assert "(app.tab==='checks'?newLoanValidationPanel():'')" in HTML
+    assert "(app.tab==='checks'?v512kAuditDetail()+newLoanValidationPanel()+v513ValidationPanel():'')" in HTML
 
 
 def test_after_only_cash_increase_without_artificial_retirement_growth():
     first=MONTHLY['2046-10'];last=MONTHLY['2077-03']
-    assert first[16]-MONTHLY['2046-09'][16] == 1597508
+    assert first[16]-MONTHLY['2046-09'][16] == 843489
     assert last[15]==RETIRE['2077-03'][3]
     assert last[7]==0
     assert RETIRE['2077-03'][4]==386865490

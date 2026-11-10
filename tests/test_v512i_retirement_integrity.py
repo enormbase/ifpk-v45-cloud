@@ -1,4 +1,4 @@
-"""IFPK V51-2j: separate, source-aware read-only retirement reconciliation."""
+"""IFPK V51-2k: separate, source-aware read-only retirement reconciliation."""
 import json,subprocess,re
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -78,8 +78,8 @@ def test_reject_stale_wrong_model_or_fake_select_value():
  ''')
 
 def test_web_wiring_and_minimal_customer_ui():
- assert 'V51-2j' in HTML
- assert 'LIFE PLAN STUDIO · IFPK V51-2j' in HTML
+ assert 'V51-2k' in HTML
+ assert 'LIFE PLAN STUDIO · IFPK V51-3b' in HTML
  assert HTML.index('cashflow_audit_v512h.js')<HTML.index('retirement_integrity_v512i.js')
  assert '⑫ 은퇴자산 중복 계산 확인' in HTML
  assert 'retAssetOrigin' in HTML and 'retAssetUsability' in HTML

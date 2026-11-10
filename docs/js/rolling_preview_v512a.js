@@ -73,7 +73,7 @@
    for(let i=0;i<keys.length;i++){
      const month=keys[i],row=snapshot[month];
      if(month!==shift(START,i)||!Array.isArray(row)||row.length<19||!row.slice(0,19).every(number))return {ready:false,reason:`${month} 기준 원장 오류`};
-     const diffNet=Math.abs(row[0]-row[2]-row[3]-row[4]-row[5]-row[6]);
+     const diffNet=Math.abs(row[0]+row[1]-row[2]-row[3]-row[4]-row[5]-row[6]);
      const diffCash=Math.abs(prevCash+row[6]-row[7]-row[8]-row[9]-row[10]+row[14]+row[15]-row[16]);
      maxNetDiff=Math.max(maxNetDiff,diffNet);maxCashDiff=Math.max(maxCashDiff,diffCash);
      if(diffNet>2||diffCash>2)return {ready:false,reason:`${month}의 원본 수입·지출 또는 월말 잔액 검산 실패`};

@@ -35,7 +35,7 @@
      if(month!==expected){invalid.push(month+' 월 누락/중복');break;}
      expected=nextMonth(month);
      const row=parseRow(snapshot[month]);if(!row){invalid.push(month+' 자료 오류');break;}
-     const netExpected=row.income-row.expense-row.homeEvent-row.carEvent-row.tripEvent;
+     const netExpected=row.income+row.pension-row.expense-row.homeEvent-row.carEvent-row.tripEvent;
      maxNetMismatch=Math.max(maxNetMismatch,Math.abs(netExpected-row.net));
      const cashExpected=(previous===null?0:previous)+row.net-row.retSave-row.houseSave-row.carSave-row.travelSave+row.eventTransfer+row.retDraw;
      maxCashMismatch=Math.max(maxCashMismatch,Math.abs(cashExpected-row.cash));
