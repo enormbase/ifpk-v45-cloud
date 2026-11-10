@@ -20,7 +20,7 @@ const base=require({json.dumps(str(ROOT/'docs/js/rolling_preview_v512a.js'))});
  return p.stdout.strip()
 
 def test_consumer_page_version_and_script_dependency():
- assert 'LIFE PLAN STUDIO · IFPK V51-4' in HTML
+ assert 'LIFE PLAN STUDIO · IFPK V51-4a' in HTML
  assert 'V51-2g ·' not in HTML
  assert '⑪ 주택 준비금이 바뀐 이유와 장기 현금흐름' in HTML
  assert HTML.index('home_bridge_v512g.js')<HTML.index('cashflow_audit_v512h.js')

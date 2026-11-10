@@ -65,7 +65,7 @@ def test_node_audit_pass_and_mutations_detected():
     assert '6/6' in p.stdout
 
 def test_all_six_tabs_and_client_accuracy_guards():
-    assert 'LIFE PLAN STUDIO · IFPK V51-4' in HTML
+    assert 'LIFE PLAN STUDIO · IFPK V51-4a' in HTML
     assert 'function v512kBrief' in HTML
     assert 'function v512kAuditDetail' in HTML
     assert "app.tab==='checks'?v512kAuditDetail()+newLoanValidationPanel()" in HTML

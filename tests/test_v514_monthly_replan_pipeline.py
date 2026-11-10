@@ -1,4 +1,4 @@
-"""V51-4: 6 source lineages / 4 domain summaries are read-only and never approve."""
+"""V51-4a: 6 source lineages / 4 domain summaries are read-only and never approve."""
 from pathlib import Path
 import subprocess, json, hashlib, re
 ROOT=Path(__file__).resolve().parents[1]
@@ -61,13 +61,13 @@ def test_reference_data_snapshots_untouched():
         assert (ROOT/f).read_bytes()==z.read(f)
 
 def test_html_keeps_existing_advanced_review_and_integrates_v514():
-    for k in ['IFPK V51-4','replan_pipeline_v514.js','function v514PipelinePanel(data)','v514PipelinePanel(pipeline)',
+    for k in ['IFPK V51-4a','replan_pipeline_v514.js','function v514PipelinePanel(data)','v514PipelinePanel(pipeline)',
        'id="v513f-deep"','v512PreviewPanel()','v513DecisionPanel()','월별 자료 수집·저장과 6개월 공식 재설계',
        '고급 재설계 비교·고객 검토 기록']:
         assert k in HTML,k
     assert 'return {...packet,payload' in HTML
     assert 'rawPreview:data' in HTML
-    assert 'V51-4 · 수집·재설계 준비 현황' in HTML
+    assert 'V51-4a · 수집·재설계 준비 현황' in HTML
     assert '<script src="./js/replan_pipeline_v514.js"></script>' in HTML
 
 def test_exports_are_read_only():

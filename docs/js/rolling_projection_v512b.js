@@ -295,7 +295,7 @@
     const examples=[];
     for(const month of Object.keys(snapshot).sort()){
       const row=snapshot[month],preRet=month<RETIRE,after=month>=asOf;
-      const legacyRebase=preRet?old.currentBudget(month)-old.legacyBudget(month):0;
+      const legacyRebase=0; // Official 605-month ledger is already on the 2.4m / 2.5% CPI basis.
       const baseBudget=preRet?old.currentBudget(month):null;
       const newBudget=preRet&&after?(actual?Math.round(spending*Math.pow(1.025,old.between(asOf,month)/12)):Math.round(baseBudget*cpi.correction)):baseBudget;
       const changeGeneral=preRet&&after?newBudget-baseBudget:0;

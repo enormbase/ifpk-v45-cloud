@@ -22,8 +22,10 @@
  const shift=(s,n)=>{const [y,m]=s.split('-').map(Number),j=y*12+m-1+n;return `${Math.floor(j/12)}-${String(j%12+1).padStart(2,'0')}`;};
  const between=(a,b)=>{const [ay,am]=a.split('-').map(Number),[by,bm]=b.split('-').map(Number);return (by-ay)*12+bm-am;};
  const monthly=(annual)=>Math.pow(1+annual,1/12)-1;
- function legacyBudget(month){const y=Number(month.slice(0,4));if(y<=2026)return 2400000;if(y<=2029)return 2200000;if(y<=2033)return 2300000;return Math.round(2300000*Math.pow(1+PLAN_INFLATION,y-2033));}
  function currentBudget(month){return Math.round(2400000*Math.pow(1+PLAN_INFLATION,between(START,month)/12));}
+ // Retained legacyBudget export is a compatibility alias ONLY. The original 605-month
+ // ledger already uses currentBudget: never reapply the superseded 2.2/2.3m phases.
+ function legacyBudget(month){return currentBudget(month);}
  function neededMonthly(goal,balance,n,annual=SAVING_RATE){
    if(![goal,balance,annual].every(number)||goal<0||goal>AMOUNT_CAP||balance<0||balance>AMOUNT_CAP||annual<0||annual>1||!Number.isInteger(n)||n<0)return null;
    const r=monthly(annual);
@@ -134,7 +136,7 @@
    const samples=new Set([START,shift(asOf,-1),asOf,shift(asOf,1),'2027-01','2034-10','2038-10','2046-10',END]);
    for(const month of Object.keys(snapshot).sort()){
      const row=snapshot[month],beforeRet=month<RETIRE;
-     const rebase=beforeRet?currentBudget(month)-legacyBudget(month):0;
+     const rebase=0; // Snapshot expense already includes current 2.5% CPI plan.
      const newGeneral=(beforeRet&&month>=asOf)?(usesActual?Math.round(actualSpending*Math.pow(1+PLAN_INFLATION,between(asOf,month)/12)):Math.round(currentBudget(month)*cpi.correction)):null;
      const cpiCost=newGeneral!==null?newGeneral-currentBudget(month):0;
      const expenseBase=row[2]+rebase,expenseNew=expenseBase+cpiCost;
