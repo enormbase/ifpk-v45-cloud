@@ -99,7 +99,7 @@ function project(snapshot,preview,inputs={},today='2026-11'){
  return {ready:true,previewOnly:true,mayApprove:false,asOf,future,mortgage,retirement,
   cautions:['금액은 고객 입력 · 증빙 미확인이며 미래 기준월 입력은 단순 가정입니다.',
   '기존 주담대 입력은 월초 잔액 기준입니다. 이후 원리금균등과 금리변경을 반영한 시험 계산입니다.',
-  '주담대 변화는 6개월 실행가능성 계산에만 시험 반영합니다. 이사 목표 자기자금·605개월 전체 원장·대출규제 심사에는 아직 반영되지 않습니다.',
+  '주담대 상환액 변화는 V51-2h의 6개월 실행가능성 및 은퇴 전 장기 월별 미리보기에만 시험 반영합니다. 이사자금은 V51-2g 연결 계산으로 별도 시험하며, 605개월 공식 원장·대출규제 실심사는 변경되지 않습니다.',
   '은퇴 금융자산 FV는 연 5.3% 수익률 가정이며 DC·IRP 구분 및 중복 여부를 확인하기 전 공식 은퇴준비자산이나 국민연금에 합산하지 않습니다.']};
 }
 return Object.freeze({project,baselineSchedule,mortgageProjection,retirementProjection,ORIGINAL_SALE_BAL,DEFAULT_RET_RATE});

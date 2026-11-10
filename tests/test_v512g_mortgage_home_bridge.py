@@ -1,4 +1,4 @@
-"""V51-2g: payoff-to-equity goal and savings bridge without modifying approved ledger."""
+"""V51-2h: payoff-to-equity goal and savings bridge without modifying approved ledger."""
 import re,subprocess,json
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -111,7 +111,7 @@ assert.equal(JSON.stringify(snapshot),frozen);
 ''')
 
 def test_version_page_and_client_friendly_collapsed_explanation():
-    assert 'LIFE PLAN STUDIO · IFPK V51-2g' in HTML
+    assert 'LIFE PLAN STUDIO · IFPK V51-2h' in HTML
     assert 'home_bridge_v512g.js' in HTML
     assert '⑩ 기존 대출이 달라지면, 이사 준비금은 얼마나 바뀔까요?' in HTML
     assert '<summary>기존 대출 → 집 매각대금 → 자기자금 계산 근거 보기</summary>' in HTML
