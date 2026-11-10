@@ -111,7 +111,7 @@ assert.equal(JSON.stringify(snapshot),frozen);
 ''')
 
 def test_version_page_and_client_friendly_collapsed_explanation():
-    assert 'LIFE PLAN STUDIO · IFPK V51-3b' in HTML
+    assert 'LIFE PLAN STUDIO · IFPK V51-3c' in HTML
     assert 'home_bridge_v512g.js' in HTML
     assert '⑩ 기존 대출이 달라지면, 이사 준비금은 얼마나 바뀔까요?' in HTML
     assert '<summary>기존 대출 → 집 매각대금 → 자기자금 계산 근거 보기</summary>' in HTML
