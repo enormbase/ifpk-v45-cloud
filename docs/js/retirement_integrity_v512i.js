@@ -17,7 +17,7 @@ function audit(debt,model={},options={},liquidity={}){
  const needed=model.neededRetirement,dc=model.dcAfterTax,prepared=model.initialRetirement;
  if(![needed,dc,prepared].every(asInteger))return {ready:false,reason:'원본 필요 은퇴자금·DC·준비자산 기준값 검증 실패'};
  const planned=prepared-dc;
- if(planned<0||Math.abs(planned-252911768)>10000)return {ready:false,reason:'원본 준비자산과 세후 DC·기존 목적저축의 금액 연결이 일치하지 않아 보류합니다.'};
+ if(planned<0||Math.abs(planned-252015001)>10000)return {ready:false,reason:'원본 준비자산과 세후 DC·기존 목적저축의 금액 연결이 일치하지 않아 보류합니다.'};
  const relation=options.retAssetOrigin||'unknown',tax=options.retAssetUsability||'unknown';
  if(!CATEGORIES.includes(relation)||!NET.includes(tax))return {ready:false,reason:'은퇴자산 구분·세후 사용가능 여부의 선택값 오류'};
  const entered=!!debt?.ready&&!!debt?.retirement?.entered&&!!debt?.retirement?.projected;

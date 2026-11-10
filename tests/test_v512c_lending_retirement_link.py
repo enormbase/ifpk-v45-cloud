@@ -101,7 +101,7 @@ assert.equal(JSON.stringify(original),before);
 
 def test_ui_displays_ltv_dsr_scenarios_and_disclaimers():
     html=HTML.read_text('utf8')
-    assert 'V51-2i · 은퇴 전 롤링 검토 · 공식 계획 미변경' in html
+    assert 'V51-2j.1 · 은퇴 전 롤링 검토 · 공식 계획 미변경' in html
     assert 'loan_scenarios_v512c.js' in html
     assert 'LTV·DSR 3가지 가정 비교' in html
     assert 'borrow.cases' in html

@@ -79,7 +79,7 @@
      const base=parseRow(snapshot[month]);
      const preRetire=month<RETIRE;
      const extraSave=(month<move&&preRetire)?deltaSave:0;
-     const extraLoan=(month>=move&&preRetire)?deltaLoan:0;
+     const extraLoan=(month>move&&preRetire)?deltaLoan:0;
      const extraEvent=month===move?deltaEvent:0;
      // An externally funded housing event moves money from purpose savings to housing;
      // its event expense and event transfer cancel in the general-cash account.
