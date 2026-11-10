@@ -150,7 +150,7 @@ def test_web_wiring_and_official_lock():
     assert 'src="./js/rolling_preview_v512a.js"' in s
     assert 'src="./js/rolling_projection_v512b.js"' in s
     assert 'IFPK_V512B.compute(INITIAL_MONTHLY' in s
-    assert 'V51-2f · 은퇴 전 롤링 검토 · 공식 계획 미변경' in s
+    assert 'V51-2g · 은퇴 전 롤링 검토 · 공식 계획 미변경' in s
     assert '공식 계획 적용은 잠금 상태' in s
     assert '2026년 11월 월 생활비 240만원' in s
     assert 'data-v512-field="carMA3"' not in s  # field ids produced dynamically by makeInput

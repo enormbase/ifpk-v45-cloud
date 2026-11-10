@@ -218,7 +218,19 @@
     const totalHomeFactor=env.homeBlocked||asOf>HOME_MOVE?1:growthFactor*observedCorrection;
     const newHousePrice=Math.round(HOME_BASE.newPrice*totalHomeFactor);
     const oldGross0=HOME_BASE.currentOldPrice*Math.pow(1+HOME_BASE.growth/100,240/12);
-    const oldNet=Math.round(HOME_BASE.oldNet+oldGross0*(totalHomeFactor-1));
+    const unadjustedOldNet=Math.round(HOME_BASE.oldNet+oldGross0*(totalHomeFactor-1));
+    // V51-2g: adjust only the verified accounting identity for OLD mortgage payoff.
+    // A lower 2046-09 loan balance raises the old house's net sale proceeds.
+    // The original 605-month ledger is NEVER edited. A directly entered 2046
+    // home-equity target takes precedence and freezes this bridge.
+    const bridgeDelta=opts.existingMortgageSaleDelta;
+    const bridgeProvided=bridgeDelta!==undefined&&bridgeDelta!==null;
+    if(bridgeProvided&&(!Number.isSafeInteger(bridgeDelta)||bridgeDelta< -104117759||bridgeDelta>260000000))
+      return {ready:false,reason:'기존 주담대의 이사 직전 잔액 차이 범위 검증 실패'};
+    const manualHomeTarget=opts.houseGoal!==undefined&&opts.houseGoal!==null&&String(opts.houseGoal).trim()!=='';
+    const mortgageBridgeApplied=bridgeProvided&&!env.homeBlocked&&asOf<HOME_MOVE&&!manualHomeTarget;
+    const oldNet=mortgageBridgeApplied?unadjustedOldNet-bridgeDelta:unadjustedOldNet;
+    if(oldNet<0||oldNet>moneyMax)return {ready:false,reason:'기존 주택 순매각대금이 유효 범위를 벗어났습니다.'};
     const loanScenario=String(opts.scenarios?.borrowingCase||'base');
     if(!Object.hasOwn(lending.CASES,loanScenario))return {ready:false,reason:'LTV/DSR 비교 시나리오가 올바르지 않습니다.'};
     const loanEstimate=env.homeBlocked||asOf>HOME_MOVE?null:lending.assess(newHousePrice,env.mortgage.value,oldNet,loanScenario);
@@ -255,7 +267,9 @@
         oldSaving:def.initialMonthly,newSaving:payment,deltaSaving:payment-def.initialMonthly,annualNet:env.deposit.annualNet,accountingVerified:false};
     }
     return {ready:true,goals:overview,finance:{
-       homePrice:newHousePrice,oldHomeNet:oldNet,loan,own:homeOwn,homeMonthly:mortgagePay,homeMonthlyBefore:HOME_BASE.existingLoanMonthly,
+       homePrice:newHousePrice,oldHomeNet:oldNet,oldHomeNetBeforeMortgageBridge:unadjustedOldNet,
+       existingMortgageBridgeApplied:mortgageBridgeApplied,existingMortgageSaleDelta:mortgageBridgeApplied?bridgeDelta:0,
+       loan,own:homeOwn,homeMonthly:mortgagePay,homeMonthlyBefore:HOME_BASE.existingLoanMonthly,
        homeBasis:env.homeBlocked?'R-ONE/주담대 금리 검증 필요 · 주택가격·대출·저축 재계산만 보류':manualHome.entered?'고객 가정의 주택 자기자금: 선택한 규제 한도 안에서 대출원금을 조정(실제 금융기관 승인 아님)':env.homeActual.ready||env.homeGrowth.updated||env.mortgage.updated?'주택가격 실측·추정 및 기준 대출한도 환산모형 연동':'원본 대출상환여력 기준의 규제 한도 추정(기준값 복원)',
        carPrice,carLoan,carMonthly:carPay,carMonthlyBefore:CAR_BASE.monthlyPayment,carResale:CAR_BASE.resale,
        tripPrice,depositNet:env.deposit.annualNet,

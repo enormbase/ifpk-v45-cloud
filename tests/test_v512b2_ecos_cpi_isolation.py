@@ -119,7 +119,7 @@ assert.equal(r.ready,false);assert.match(r.reason,/carMA3/);
 
 def test_site_independent_warnings_and_readonly_labels():
     html=HTML.read_text('utf8')
-    assert 'V51-2f · 은퇴 전 롤링 검토 · 공식 계획 미변경' in html
+    assert 'V51-2g · 은퇴 전 롤링 검토 · 공식 계획 미변경' in html
     assert '자동차 지표만 검증 보류' in html
     assert '여행 지표만 검증 보류' in html
     assert '주택 항목만 계산 보류' in html

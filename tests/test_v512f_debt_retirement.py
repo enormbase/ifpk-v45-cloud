@@ -98,5 +98,5 @@ def test_web_wiring_collapsed_details_and_approval_remains_locked():
     assert '⑨ 기존 대출과 은퇴자산, 앞으로 어떻게 될까요?' in HTML
     assert '<summary>주담대 상환과 은퇴자산 예상 계산 자세히 보기</summary>' in HTML
     assert 'mortgageMonthlyAdjustment' in HTML
-    assert 'V51-2f · 은퇴 전 롤링 검토 · 공식 계획 미변경' in HTML
+    assert 'V51-2g · 은퇴 전 롤링 검토 · 공식 계획 미변경' in HTML
     assert '공식 계획 적용은 잠금 상태' in HTML

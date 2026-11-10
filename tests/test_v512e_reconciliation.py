@@ -70,7 +70,7 @@ assert.equal(r.future,false);assert.match(r.accounts.find(x=>x.key==='house').st
 assert.equal(r.mayApprove,false);''')
 
 def test_html_exposes_simple_collapsed_panel_with_correct_script_order():
-    assert 'V51-2e' in HTML
+    assert 'V51-2g' in HTML
     assert '계좌별 자산·대출잔액 대사(선택)' in HTML
     assert '⑧ 내 돈이 계획대로 모였는지 확인' in HTML
     assert '<details class="v512-details"><summary>계좌별 예상 금액과 입력 금액 비교' in HTML
