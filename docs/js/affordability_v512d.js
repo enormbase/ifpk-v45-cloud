@@ -23,6 +23,8 @@
    const income=bounded(input.monthlyIncome,'고객 확인 월 순유입',200000000);
    const extraDebt=bounded(input.additionalDebt,'모형에 없는 추가 월 채무상환',100000000);
    const liquid=bounded(input.liquidCash,'재설계월 월초 일반현금',1e12);
+   const paymentAdjustments=input.mortgageMonthlyAdjustment||null;
+   if(paymentAdjustments&&(typeof paymentAdjustments!=='object'||Object.values(paymentAdjustments).some(v=>typeof v!=='number'||!Number.isFinite(v)||Math.abs(v)>100000000)))return {ready:false,reason:'기존 주담대 상환변화 계산값 확인 필요'};
    for(const v of [income,extraDebt,liquid])if(v.error)return {ready:false,reason:v.error};
    const lastMonth=base.shift(asOf,-1), prior=preview.monthlyResults[lastMonth];
    if(!prior||!Number.isFinite(prior.baselineCash))return {ready:false,reason:'재설계월 직전 계획 현금잔액이 없습니다.'};
@@ -43,7 +45,8 @@
      // Preview monthly cashflow includes all expenses, net event transfers and target saving.
      // Reverse only saving transfers, then apply separately identified input deltas.
      const incomeDifference=usedIncome-incomePlan;
-     const afterObligations=p.previewMonthlyCashflow+targetSaving+incomeDifference-(extraDebt.entered?extraDebt.value:0);
+     const mortgageAdjustment=paymentAdjustments?.[month]??0;
+     const afterObligations=p.previewMonthlyCashflow+targetSaving+incomeDifference-(extraDebt.entered?extraDebt.value:0)-mortgageAdjustment;
      const monthlyAfterAll=afterObligations-targetSaving;
      const fundingGap=Math.max(0,targetSaving-afterObligations);
      const essentialGap=Math.max(0,-afterObligations);
@@ -53,7 +56,7 @@
      if(plannedCash<0)negativeMonths++;
      sixMonthGoalTotal+=targetSaving;sixMonthIncomeTotal+=usedIncome;sixMonthNeed+=fundingGap;
      months.push({month,expectedIncome:incomePlan,usedIncome,afterObligations:Math.round(afterObligations),retirementSaving:goalRet,houseSaving:goalHouse,carSaving:goalCar,travelSaving:goalTravel,
-       targetSaving:Math.round(targetSaving),fundingGap:Math.round(fundingGap),essentialGap:Math.round(essentialGap),monthlyAfterAll:Math.round(monthlyAfterAll),cashAfterAll:plannedCash,affordableFromMonthlyFlow:Math.max(0,Math.round(afterObligations))});
+       mortgagePaymentDifference:Math.round(mortgageAdjustment),targetSaving:Math.round(targetSaving),fundingGap:Math.round(fundingGap),essentialGap:Math.round(essentialGap),monthlyAfterAll:Math.round(monthlyAfterAll),cashAfterAll:plannedCash,affordableFromMonthlyFlow:Math.max(0,Math.round(afterObligations))});
    }
    return {ready:true,previewOnly:true,mayApprove:false,asOf,lastMonth,startingCash:Math.round(startingCash),startingSource:liquid.entered?'고객 입력 일반현금 · 증빙 미확인':'기존 계획 추정 일반현금 · 음수이면 미조달액',
      incomeSource:income.entered?'고객 입력 순유입 · 향후 6개월 임시 가정':'기존 통합원장 예상 순유입',
