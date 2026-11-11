@@ -29,8 +29,9 @@ def test_no_change_to_source_data_and_operation_policy():
     assert len(D['monthly'])==677
     assert len(D['retirement'])==324
     assert D['retirement']['2083-03'][-1]==80984826
-    assert '종합 재설계 · 6개월마다' in HTML
-    assert '월별 예약 별도 설정' in HTML
+    assert '매달, 우리 가족 저축계획을 다시 확인해요' in HTML
+    assert '종합 재설계 · 6개월마다' not in HTML[HTML.index('function summaryPage()'):HTML.index('// 고객 입력 초안은 전체요약')]
+    assert '은행거래 자동확인·공식계획 자동승인은 연결 전' in HTML
 
 def test_long_horizon_monthly_expansion():
     assert 'y>2083)return;' in HTML
