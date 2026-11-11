@@ -1,0 +1,38 @@
+{
+  "version": "V52",
+  "baseSheet": "1WGTTY9utSvdWfQ8JozfFQSuawN0FwuiWYpAFQNPrxFc",
+  "inputs": {
+    "endAge": 90,
+    "retireAge": 63,
+    "livingAt2026": 2700000,
+    "mortgageInclusive": true
+  },
+  "months": 677,
+  "retirementMonths": 324,
+  "start": "2026-11",
+  "end": "2083-03",
+  "moneyFlowSources": [
+    4027837,
+    0,
+    105000,
+    0
+  ],
+  "incomeAt2028March": [
+    4027837,
+    0,
+    405000,
+    0
+  ],
+  "incomeAt2028April": [
+    4027837,
+    0,
+    105000,
+    0
+  ],
+  "needAtRetirement": 640166067,
+  "preparedAtRetirement": 668252946,
+  "balanceEnd": 80984826,
+  "negativeMonths": 188,
+  "minGeneralCash": -31794425,
+  "ledgerHash": "ccc080927584d47c3d225acb180f4acf1cdcaa6d73cdb17b6afee0cb127fa3d8"
+}
