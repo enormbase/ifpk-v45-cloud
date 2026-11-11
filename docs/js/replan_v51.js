@@ -1,6 +1,6 @@
 /* IFPK V51.1: verified, read-only six-area re-planning preview.
  * This module deliberately NEVER commits changes to an official financial plan.
- * Inputs are the existing 605-month workbook snapshot, the verified partial
+ * Inputs are the existing 677-month workbook snapshot, the verified partial
  * V49 housing impact and public-series basis metadata.
  */
 (function(root,factory){
@@ -9,7 +9,7 @@
   if(root)root.IFPK_V51_REPLAN=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
  'use strict';
- const START='2026-11', END='2077-03', MOVE='2046-10', RETIRE='2056-04', EXPECTED=605;
+ const START='2026-11', END='2083-03', MOVE='2046-10', RETIRE='2056-04', EXPECTED=677;
  const MONTH_RATE=0.026289/12; // existing fixed purpose-saving rate, not a new live-rate assumption
  const AREAS=Object.freeze([
    {id:'retirement',name:'은퇴설계',why:'국민연금·DC·IRP·인출·건강보험료를 포함한 은퇴자산 전체 재계산이 필요합니다.'},
@@ -127,7 +127,7 @@
  function readiness(summary){
    const areas=buildAreaReports(summary?.preview,summary?.house);
    const blockers=[];
-   if(!summary?.ledger?.ready)blockers.push('605개월 공식 기준 원장 검증 실패');
+   if(!summary?.ledger?.ready)blockers.push('677개월 공식 기준 원장 검증 실패');
    if(!summary?.house?.ready)blockers.push('주택 월별 영향 시험 미완료');
    for(const a of areas){if(!['ready','verified'].includes(a.status))blockers.push(`${a.name}: ${a.label}`);}
    blockers.push('월별 은퇴자산·DC·연금·건보료 재계산 및 목표별 자금잔액 통합 대조 미완료');

@@ -1,4 +1,4 @@
-"""V51.1 uses the real original 605-month input as immutable reference."""
+"""V52 uses the approved 677-month input as immutable reference."""
 import subprocess
 import unittest
 from pathlib import Path
@@ -28,7 +28,7 @@ class V511EngineTests(unittest.TestCase):
     def test_real_ledger_integrity(self):
         out=node(JS_HEAD+'''
 const status=v.inspectLedger(snapshot);
-assert.equal(status.ready,true);assert.equal(status.months,605);
+assert.equal(status.ready,true);assert.equal(status.months,677);
 assert.ok(status.maxCashMismatch<=2);assert.ok(status.maxNetMismatch<=2);
 console.log('ledger ok');''')
         self.assertIn('ok',out)
@@ -37,10 +37,10 @@ console.log('ledger ok');''')
 const old=JSON.stringify(snapshot);
 const sim=v.simulateHousing(snapshot,verified);
 assert.equal(sim.ready,true);assert.equal(sim.partial,true);
-assert.equal(sim.months,605);assert.equal(sim.inputs.deltaSave,40543);
+assert.equal(sim.months,677);assert.equal(sim.inputs.deltaSave,40543);
 assert.equal(sim.inputs.deltaEvent,11503119);
 assert.equal(sim.finalCashDelta,-40543*239);
-// The base is the currently approved 605-month ledger, not the obsolete V51.1 fixture.
+// The base is the currently approved 677-month ledger, not the obsolete V51.1 fixture.
 const baselineDeficits=Object.entries(snapshot).filter(([month,row])=>month<'2056-04' && row[16]<0).length;
 assert.equal(sim.baseDeficitCount,baselineDeficits);
 assert.ok(sim.deficitCount>=sim.baseDeficitCount);
