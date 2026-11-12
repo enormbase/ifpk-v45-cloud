@@ -34,4 +34,4 @@ def test_boundary_dates_and_v55_execution_retained():
  assert "'2083-04','◇','만 90세 도달 가정'" in SRC
  assert 'IFPK_V55_UI.infoSummary' in SRC
  assert 'IFPK_V55_UI.roadmap' in SRC
- assert 'IFPK V57' in SRC
+ assert 'IFPK V58' in SRC

@@ -12,8 +12,8 @@ class V55Test(unittest.TestCase):
 
     def test_html_links_runtime(self):
         s=(ROOT/'docs'/'index.html').read_text('utf-8')
-        self.assertIn('IFPK V57',s)
-        self.assertIn('대시보드 V57</title>',s)
+        self.assertIn('IFPK V58',s)
+        self.assertIn('대시보드 V58</title>',s)
         self.assertIn('v55_savings_engine.js',s)
         self.assertIn('v55_savings_ui.js',s)
         self.assertIn('v55_monthly_savings_snapshot.js',s)
