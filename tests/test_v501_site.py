@@ -1,27 +1,53 @@
+"""UI/indicator compatibility checks updated for V59.
+
+The old six-month replan panel was deliberately removed in V59, so a
+presence-check for that retired copy must not block deployment.
+"""
 import unittest
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+
+ROOT = Path(__file__).resolve().parents[1]
+
 
 class V501SiteTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (ROOT / 'docs' / 'index.html').read_text(encoding='utf-8')
+
     def test_customer_first_view_and_disclosure(self):
-        html=(ROOT/'docs/index.html').read_text()
-        for label in ['경제지표 변화 한눈에 보기','과거 월별 데이터 확인', '수집·수정 이력 확인',
-                      '현재 계획과 새 계산값 비교','6개월 재설계 · 6개 분야 변경 전후 검토',
-                      '고급 자료·수동 등록·검증 기능']:
-            self.assertIn(label,html)
-        self.assertIn('function dataPageLegacy()',html)
-        self.assertIn('function dataPage()',html)
-        self.assertIn('v501Chart(rows,spec.unit)',html)
+        # Check the live data and monthly-execution UI, not the deleted
+        # "6개월 재설계 · 6개 분야 변경 전후 검토" panel.
+        for label in [
+            '경제지표 변화 한눈에 보기',
+            '과거 월별 데이터 확인',
+            '수집·수정 이력 확인',
+            '현재 계획과 새 계산값 비교',
+            '우리 가족의 저축 실행 현황',
+            '고급 자료·수동 등록·검증 기능',
+        ]:
+            with self.subTest(label=label):
+                self.assertIn(label, self.html)
+
+        self.assertNotIn('6개월 재설계 · 6개 분야 변경 전후 검토', self.html)
+        self.assertIn('function dataPageLegacy()', self.html)
+        self.assertIn('function dataPage()', self.html)
+        self.assertIn('v501Chart(rows,spec.unit)', self.html)
+
     def test_rone_alias_not_merged_with_previous_base(self):
-        html=(ROOT/'docs/index.html').read_text()
-        self.assertIn("'HOME_PRICE_APT_DAEJEON_SEOGU_BASE202606'",html)
-        self.assertIn("'HOME_PRICE_APT_DAEJEON_SEOGU'",html)
-        self.assertIn('const found=V44_LIVE.records.filter(r=>r.id===id',html)
-        self.assertIn('est?.rates?.[\'60months\']',html)
-        self.assertIn('est?.rates?.[\'120months\']',html)
+        html = self.html
+        self.assertIn("const oldId='HOME_PRICE_APT_DAEJEON_SEOGU'", html)
+        self.assertIn("const newId=oldId+'_BASE202606'", html)
+        self.assertIn('function v501Data(spec)', html)
+        self.assertIn('const found=V44_LIVE.records.filter(r=>r.id===id', html)
+        self.assertIn("est?.rates?.['60months']", html)
+        self.assertIn("est?.rates?.['120months']", html)
+
     def test_revisions_only_from_public_snapshot(self):
-        html=(ROOT/'docs/index.html').read_text()
-        self.assertIn('V44_LIVE.revisionExported=json.revisionHistoryAvailable===true',html)
-        self.assertIn('수정 이력이 없다는 의미는 아닙니다.',html)
-        self.assertNotIn('sb_secret_',html)
-if __name__=='__main__':unittest.main()
+        html = self.html
+        self.assertIn('V44_LIVE.revisionExported=json.revisionHistoryAvailable===true', html)
+        self.assertIn('수정 이력이 없다는 의미는 아닙니다.', html)
+        self.assertNotIn('sb_secret_', html)
+
+
+if __name__ == '__main__':
+    unittest.main()
