@@ -25,7 +25,7 @@ def test_monthly_recalculation_messaging_and_audit():
  assert '${overviewMonthlyCycle()}' in SUMMARY
  assert '${overviewVerification()}' in SUMMARY
  assert '매달, 우리 가족 저축계획을 다시 확인해요' in SRC
- assert '은행거래 자동확인·공식계획 자동승인은 연결 전' in SRC
+ assert '표시된 미래 금액은 예상치이며 실제 저축 결과에 따라 달라질 수 있어요.' in SRC
  assert "location.hash='#checks'" in SRC
 
 def test_boundary_dates_and_v55_execution_retained():
@@ -34,4 +34,4 @@ def test_boundary_dates_and_v55_execution_retained():
  assert "'2083-04','◇','만 90세 도달 가정'" in SRC
  assert 'IFPK_V55_UI.infoSummary' in SRC
  assert 'IFPK_V55_UI.roadmap' in SRC
- assert 'IFPK V56' in SRC
+ assert 'IFPK V57' in SRC

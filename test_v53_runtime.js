@@ -12,7 +12,7 @@ const rows=MODEL.annual.split(';').map(s=>s.split(',').map(Number));
 const date='2028-04';
 const conversion=a=>Array.isArray(a)?{income:a[0],pension:a[1],expense:a[2],retSave:a[7],houseSave:a[8],carSave:a[9],travelSave:a[10],houseBal:a[11],carBal:a[12],travelBal:a[13],cash:a[16]}:a;
 const getMonth=d=>conversion(map[d]||MODEL.monthly.find(x=>x[0]===d)?.[1]);
-const ctx={Number,Math,app:{year:2028,month:4,flowExpandedYear:null},persistent:{retireMonths:{}},RETIRE_SNAPSHOT:{},ANNUAL:rows,MODEL,monthInfo:getMonth,computedGoalPlan:()=>({homeMonth:'2046-10',carMonth:'2034-10',travelMonth:'2038-10'}),goalPlanChanged:()=>false,esc:x=>String(x),KRW:x=>Math.round(+x).toLocaleString('ko-KR')+'원',COMPACT:x=>Math.abs(x)>1e8?(x/1e8).toFixed(2)+'억원':Math.abs(x)>10000?Math.round(x/1e4)+'만원':Math.round(x)+'원',MILL:x=>Number(x).toFixed(1)+'백만원',flowYearMonths:()=>'<div>month rows</div>'};
+const ctx={IFPK_V57:require('./docs/js/v57_monthly_close.js'),localStorage:{getItem:()=>null},Number,Math,app:{year:2028,month:4,flowExpandedYear:null},persistent:{retireMonths:{}},RETIRE_SNAPSHOT:{},ANNUAL:rows,MODEL,monthInfo:getMonth,computedGoalPlan:()=>({homeMonth:'2046-10',carMonth:'2034-10',travelMonth:'2038-10'}),goalPlanChanged:()=>false,esc:x=>String(x),KRW:x=>Math.round(+x).toLocaleString('ko-KR')+'원',COMPACT:x=>Math.abs(x)>1e8?(x/1e8).toFixed(2)+'억원':Math.abs(x)>10000?Math.round(x/1e4)+'만원':Math.round(x)+'원',MILL:x=>Number(x).toFixed(1)+'백만원',flowYearMonths:()=>'<div>month rows</div>'};
 vm.createContext(ctx);
 vm.runInContext(section('function v53GoalFundPanel(date){','function overviewHero(dt)'),ctx);
 vm.runInContext(section('function v53FlowFundBalances(date){','function flowYearMonths(y){'),ctx);

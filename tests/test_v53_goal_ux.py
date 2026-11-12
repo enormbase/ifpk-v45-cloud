@@ -8,7 +8,7 @@ DATA=json.loads((ROOT/'docs/data/v52_authoritative_677.json').read_text(encoding
 def test_funding_replaces_lifetime_cards_without_deleting_calculation():
     assert '우리 가족의 전체 생애계획 결과' not in HTML
     assert '우리 가족 저축 실행 현황' in HTML
-    assert '${v54SavingsRoadmap(dt)}' in HTML
+    assert '${v57Roadmap()}' in HTML
     assert 'function v54SavingsRoadmap(date)' in HTML
     assert '실제 납입액 미확인' in HTML
     assert 'data-goal="${g.goto}"' in HTML

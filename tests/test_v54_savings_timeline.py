@@ -7,7 +7,7 @@ D=json.loads((ROOT/'docs/data/v52_authoritative_677.json').read_text(encoding='u
 
 def test_five_tracks_and_correct_scale():
     assert 'function v54SavingsRoadmap(date)' in HTML
-    assert '${v54SavingsRoadmap(dt)}' in HTML
+    assert '${v57Roadmap()}' in HTML
     for token in ['우리 가족 저축 실행 현황','2056-04','2046-10','2034-10','2038-10','2048-04']:
         assert token in HTML
     assert "const tickYears=[2030,2035,2040,2045,2050,2055]" in HTML
@@ -31,7 +31,7 @@ def test_no_change_to_source_data_and_operation_policy():
     assert D['retirement']['2083-03'][-1]==80984826
     assert '매달, 우리 가족 저축계획을 다시 확인해요' in HTML
     assert '종합 재설계 · 6개월마다' not in HTML[HTML.index('function summaryPage()'):HTML.index('// 고객 입력 초안은 전체요약')]
-    assert '은행거래 자동확인·공식계획 자동승인은 연결 전' in HTML
+    assert '표시된 미래 금액은 예상치이며 실제 저축 결과에 따라 달라질 수 있어요.' in HTML
 
 def test_long_horizon_monthly_expansion():
     assert 'y>2083)return;' in HTML
