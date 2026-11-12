@@ -12,7 +12,7 @@ class V57RuntimeTest(unittest.TestCase):
 
     def test_new_ux_present(self):
         s=(ROOT/'docs'/'index.html').read_text(encoding='utf8')
-        self.assertIn('IFPK V58',s)
+        self.assertIn('IFPK V59',s)
         self.assertIn('data-v57-check',s)
         self.assertIn('IFPK_V57.closeMonth(',s)
         self.assertIn('${v57Roadmap()}',s)

@@ -38,6 +38,7 @@ function simulate(snapshot,options={}){
  if(new Set(goals.map(g=>g.priority)).size!==goals.length || goals.some(g=>g.priority<1||g.priority>4))throw Error('우선순위는 1~4에서 중복 없이 지정해야 합니다');
  for(const g of goals){
   if(!['increase','flat','decrease'].includes(g.method))throw Error('지원하지 않는 저축방식');
+  g.baseMonthlyRate=g.monthlyRate;
   if(g.id!=='ret'&&e.DEPOSIT!==BASELINE_ECON.DEPOSIT)g.monthlyRate=Math.pow(1+e.DEPOSIT/100,1/12)-1;
   if(g.id==='travel')g.total=g.originalTotal*e.CPI_TRAVEL/BASELINE_ECON.CPI_TRAVEL;
   if(g.id==='home'){
@@ -50,16 +51,18 @@ function simulate(snapshot,options={}){
  }
  const sorted=[...goals].sort((a,b)=>a.priority-b.priority),byId=Object.fromEntries(goals.map(g=>[g.id,g]));
  const monthsOut=[],monthlyByKey={},actualCount={ret:0,home:0,car:0,travel:0},snapshotNow=options.asOf||snapshot.asOf,book={};
+ const activeMonth=options.activeMonth||snapshot.asOf, historyEconomics=options.historyEconomics||{};
  let cumulativeFree=0,overbooked=0;
  const carDeltaLoan=((58885648*e.CPI_CAR/BASELINE_ECON.CPI_CAR)-10648764-20000000)/28236648;
  const newHousePay=pmt(363598263,e.MORTGAGE/100,360);
  const homeDelta=newHousePay-1675319;
  for(const [key,salary,spouse,gov,general,child,mortgage,auto,health,availableOriginal] of snapshot.incomeExpenseMonths){
-  const t=key,scaleNew=t>=econ.asOf;
+  const t=key,scaleNew=t>=activeMonth;
   const generalAdj=scaleNew?general*(e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL):general;
+  const childAdj=scaleNew?child*(e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL):child;
   const carAdj=scaleNew && t>='2034-11'&&t<='2039-10'?auto*Math.max(0,carDeltaLoan):auto;
   const mortAdj=scaleNew && t>='2046-11' && t<='2056-03'?mortgage+homeDelta:mortgage;
-  let income=salary+spouse+gov,expense=generalAdj+child+mortAdj+carAdj+health;
+  let income=salary+spouse+gov,expense=generalAdj+childAdj+mortAdj+carAdj+health;
   const changed=cashOverrides[key];
   if(changed&&finite(Number(changed.income))&&Number(changed.income)>=0)income=Number(changed.income);
   if(changed&&finite(Number(changed.expense))&&Number(changed.expense)>=0)expense=Number(changed.expense);
@@ -73,7 +76,11 @@ function simulate(snapshot,options={}){
   for(const g of goals){
    used+=allocated[g.id];
    if(t>=g.deadline){g.balance=0;balances[g.id]=0;continue;}
-   g.balance=Math.max(0,g.balance*(1+g.monthlyRate)+allocated[g.id]);balances[g.id]=g.balance;
+   // Confirmed historical balances accrue at the rate prevailing when that month was closed.
+   // Unclosed future months use the latest verified deposit-rate assumption.
+   const locked=historyEconomics[t],historicRate=locked&&Number.isFinite(Number(locked.DEPOSIT))?Math.pow(1+Number(locked.DEPOSIT)/100,1/12)-1:null;
+   const accrual=g.id==='ret'?g.monthlyRate:(historicRate??(t<activeMonth?g.baseMonthlyRate:g.monthlyRate));
+   g.balance=Math.max(0,g.balance*(1+accrual)+allocated[g.id]);balances[g.id]=g.balance;
   }
   const missing=Object.fromEntries(goals.map(g=>[g.id,Math.max(0,required[g.id]-allocated[g.id])]));
   const free=available-used;
@@ -89,11 +96,15 @@ function simulate(snapshot,options={}){
  let retirementBalance=Number(snapshot.dcRetirement||0)+(book.ret?.expected||0),firstUnmet=null,totalUnmet=0;
  const postRate=Math.pow(1+.04,1/12)-1,retirementProjection=[];
  for(const [date,draw,netMonth,expense,pension,insurance] of (snapshot.retirementMonths||[])){
-  const raw=Math.max(0,Number(draw)||0),surplus=Math.max(0,Number(netMonth)||0);
+  const baseExpense=Number(expense)||0,baseMortgage=date<='2076-10'?1675319:0;
+  const livingBase=Math.max(0,baseExpense-baseMortgage);
+  const cpiDelta=livingBase*(e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL-1);
+  const houseDelta=date<='2076-10'?homeDelta:0;
+  const raw=Math.max(0,(Number(draw)||0)+cpiDelta+houseDelta),surplus=Math.max(0,Number(netMonth)||0);
   const actual=Math.min(raw,retirementBalance),unmet=raw-actual;
   if(unmet>1&&!firstUnmet)firstUnmet=date;
   totalUnmet+=unmet;retirementBalance=Math.max(0,(retirementBalance-actual)*(1+postRate)+surplus);
-  retirementProjection.push({month:date,balance:retirementBalance,needed:raw,paid:actual,unmet,expense,pension,insurance});
+  retirementProjection.push({month:date,balance:retirementBalance,needed:raw,paid:actual,unmet,expense:baseExpense+cpiDelta+houseDelta,pension,insurance});
  }
  const first=monthsOut[0],last=monthsOut[monthsOut.length-1];
  return {asOf:snapshotNow,source:snapshot.source,goals:goals.map(g=>({...g})),byId,months:monthsOut,byMonth:monthlyByKey,book,actualCount,economics:econ,overbooked,first,last,retirement:{initial:((snapshot.dcRetirement||0)+(book.ret?.expected||0)),lastBalance:retirementBalance,firstUnmet,totalUnmet,projection:retirementProjection},schema:snapshot.schema};
