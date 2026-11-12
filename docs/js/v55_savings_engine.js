@@ -26,7 +26,7 @@ function economics(snapshot,options){
   const z=e[id];const x=Number(z?.value);
   const ref=String(z?.lastMonth||'');
   const baselineMonth=(id==='CPI_GENERAL')?'2026-10':'2026-09';
-  if(z&&z.ready===true&&Number.isFinite(x)&&ref>baselineMonth&&ref<=asOf){values[id]=x;changes.push({id,value:x,ref,base});}
+  if(z&&z.ready===true&&Number.isFinite(x)&&ref>=baselineMonth&&ref<=asOf){values[id]=x;if(Math.abs(x-base)>1e-8)changes.push({id,value:x,ref,base});}
   else values[id]=base;
  }
  return {values,changes,asOf};
@@ -86,7 +86,10 @@ function simulate(snapshot,options={}){
   const free=available-used;
   cumulativeFree+=free;
   if(free<-.01)overbooked++;
-  const rec={month:t,income,expense,available,required,allocated,missing,balances,status:entryStatus,assigned:used,needed:Object.values(required).reduce((a,b)=>a+b,0),free,cumulativeFree,economicScenario:scaleNew&&econ.changes.length>0};
+  const rec={month:t,income,expense,available,required,allocated,missing,balances,status:entryStatus,assigned:used,needed:Object.values(required).reduce((a,b)=>a+b,0),free,cumulativeFree,economicScenario:scaleNew&&econ.changes.length>0,
+   expenseParts:{general:generalAdj,childcare:childAdj,mortgage:mortAdj,carLoan:carAdj,insurance:health},
+   baselineParts:{general,childcare:child,mortgage,carLoan:auto,insurance:health},
+   expenseOverride:!!(changed&&finite(Number(changed.expense))&&Number(changed.expense)>=0)};
   monthsOut.push(rec);monthlyByKey[t]=rec;
   for(const g of goals)if(offset(t,1)===g.deadline)book[g.id]={deadline:g.deadline,goal:g.total,expected:g.balance,shortfall:Math.max(0,g.total-g.balance),rate:g.monthlyRate};
  }
@@ -107,7 +110,7 @@ function simulate(snapshot,options={}){
   retirementProjection.push({month:date,balance:retirementBalance,needed:raw,paid:actual,unmet,expense:baseExpense+cpiDelta+houseDelta,pension,insurance});
  }
  const first=monthsOut[0],last=monthsOut[monthsOut.length-1];
- return {asOf:snapshotNow,source:snapshot.source,goals:goals.map(g=>({...g})),byId,months:monthsOut,byMonth:monthlyByKey,book,actualCount,economics:econ,overbooked,first,last,retirement:{initial:((snapshot.dcRetirement||0)+(book.ret?.expected||0)),lastBalance:retirementBalance,firstUnmet,totalUnmet,projection:retirementProjection},schema:snapshot.schema};
+ return {asOf:snapshotNow,activeMonth,source:snapshot.source,goals:goals.map(g=>({...g})),byId,months:monthsOut,byMonth:monthlyByKey,book,actualCount,economics:econ,overbooked,first,last,retirement:{initial:((snapshot.dcRetirement||0)+(book.ret?.expected||0)),lastBalance:retirementBalance,firstUnmet,totalUnmet,projection:retirementProjection},schema:snapshot.schema};
 }
 const api={months,offset,requirement,newGoalMoney,simulate,BASELINE_ECON};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
