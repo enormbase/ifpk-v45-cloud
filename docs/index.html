@@ -1698,7 +1698,7 @@ body:has(#cp-family) .cp-region-row strong{color:#4d5d88}
 <div id="print-root" aria-hidden="true"></div>
 <script src="./js/review_cycle_v50.js"></script><script src="./js/replan_v51.js"></script><script src="./js/rolling_preview_v512a.js"></script><script src="./js/loan_scenarios_v512c.js"></script><script src="./js/rolling_projection_v512b.js"></script><script src="./js/affordability_v512d.js"></script><script src="./js/reconciliation_v512e.js"></script><script src="./js/debt_retirement_v512f.js"></script><script src="./js/home_bridge_v512g.js"></script><script src="./js/cashflow_audit_v512h.js"></script><script src="./js/retirement_integrity_v512i.js"></script><script src="./js/source_audit_v512k.js"></script><script src="./js/review_decisions_v513a.js"></script><script src="./js/review_scope_v513b.js"></script><script src="./js/longterm_cash_v513c.js"></script><script src="./js/goal_funding_v513d.js"></script><script src="./js/funding_options_v513e.js"></script><script src="./js/replan_hub_v513f.js"></script><script src="./js/replan_pipeline_v514.js"></script>
 <!-- 이전 테스트 기준 라벨: LIFE PLAN STUDIO · IFPK V51.1 / V51.1d 지표값·기준연도 표기 수정 (현재 버전 V51-2a) -->
-<script src="./data/v55_monthly_savings_snapshot.js"></script><script src="./js/v55_savings_engine.js"></script><script src="./js/v55_savings_ui.js"></script><script src="./js/v59_economic_adapter.js"></script><script>
+<script src="./data/v55_monthly_savings_snapshot.js"></script><script src="./js/v55_savings_engine.js"></script><script src="./js/v55_savings_ui.js"></script><script src="./js/v59_economic_adapter.js"></script><script src="./js/v59_net_goal_progress.js"></script><script>
 /* IFPK V58: customer-entered monthly actuals / manual completion / synchronized four-goal rollover.
  * Pure transactional helper. No bank verification, backend mutation, or official-plan approval.
  */
@@ -2301,13 +2301,12 @@ function v57Details(date,sim,g){const id=g.id,meta=V57_GOAL_META[id],started=dat
  </article>`;
 }
 function v59GoalDestination(date,sim,g){
- const prev=IFPK_V55.offset(date,-1),past=sim.byMonth[prev];
- // Exclude this open month's forecast allocation: only confirmed earlier deposits count.
- const bal=past?Math.max(0,Number(past.balances[g.id]||0)):Math.max(0,Number(g.initial||0));
- const left=Math.max(0,IFPK_V55.months(date,g.deadline));
- const savedAtGoal=bal*Math.pow(1+Number(g.monthlyRate||0),left);
- const pct=g.total>0?Math.min(100,Math.max(0,savedAtGoal/g.total*100)):100;
- return `<div class="v57-destination v59-destination" role="progressbar" aria-label="${V57_GOAL_META[g.id].name} 목표자금 준비율" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}" title="현재까지 확인된 목적계좌 잔액을 목표일까지 운용한다고 가정한 준비율 · 향후 미납입 예정금은 미포함"><span class="v59-goal-fill" style="height:${pct.toFixed(2)}%"></span><span class="v59-destination-body"><span class="v57-flag" aria-hidden="true">⚑</span><small>${esc(g.deadline.replace('-','.'))}</small><strong>${esc(COMPACT(g.total))}</strong><em>목표일 필요자금</em><b class="v59-goal-percent">${pct.toFixed(1)}%</b></span></div>`;
+ // The target box measures only new savings after the original 2026-11 plan.
+ // Pre-existing capital remains fully invested in the goal's total forecast.
+ const p=IFPK_V59_NET_GOAL.calculate(g,date,v57Progress.history);
+ const pct=p.percent;
+ const tip=`최초 기적립금은 제외한 신규 저축 준비율 · 순필요저축 목표액 ${KRW(Math.round(p.netTarget))} · 확정 신규 납입의 목표일 예상가치 ${KRW(Math.round(p.newAtGoal))}`;
+ return `<div class="v57-destination v59-destination" role="progressbar" aria-label="${V57_GOAL_META[g.id].name} 신규 저축 준비율" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}" title="${esc(tip)}"><span class="v59-goal-fill" style="height:${pct.toFixed(2)}%"></span><span class="v59-destination-body"><span class="v57-flag" aria-hidden="true">⚑</span><small>${esc(g.deadline.replace('-','.'))}</small><strong>${esc(COMPACT(p.netTarget))}</strong><em>순필요저축 목표액</em><b class="v59-goal-percent">${pct.toFixed(1)}%</b></span></div>`;
 }
 function v58BeforeLastActual(date,lastMonth){
  const prev={...v55Draft.actuals};delete prev[lastMonth];
@@ -2350,7 +2349,7 @@ function v57Roadmap(){const sim=v55State(),date=v57Progress.active,rec=sim.byMon
  ${recentOver>1?`<p class="v57-alert">⚠ 지난 ${lastHistory[0].replace('-','.')} 실제 저축액은 당시 저축가능액보다 <b>${KRW(recentOver)} 많았습니다.</b> 초과분을 어떤 자금으로 마련했는지 확인이 필요해요.</p>`:''}
  <footer class="v57-footer">${total?`<div class="v59-close-row"><div><b>이번 달 4개 목적저축 실적을 모두 확인했나요?</b><span>확인 완료 ${done}/${total}개 · 실적이 목표액보다 적거나 0원이어도 다음 달로 진행할 수 있어요.</span></div><button type="button" class="v59-advance" data-v59-advance ${IFPK_V57.pendingReady(v57Progress,goals,date)?'':'disabled'}>다음 달 계획 계산하고 이동하기 <span aria-hidden="true">→</span></button></div>`:''}<div class="v57-next"><div><strong>${total?`4개 실적 확인 → 아래 버튼을 눌러 다음 달로 이동`:'목적저축 실행기간이 종료됐어요.'}</strong><p>목표 달성 여부와 관계없이 확인할 수 있어요. 기존 월은 기록으로 보관하고 다음 월의 필요액·권장 배정을 다시 계산해요.</p></div><button type="button" data-v57-refresh>경제지표 새로 확인 ↻</button></div><p class="v57-notice">갱신 기준: 고객 실제 납입 입력 + 공개 지표 중 검증된 새 관측값 반영 · ${economicN?`기준 가정 대비 갱신 적용 지표 ${economicN}건`:'검증된 새 지표 없음 · 기존 가정 유지'} · 계산유형: 주택 감액형 / 자동차·여행 정액형 / 은퇴 증액형 (우선순위는 고객정보 설정에 따라 적용)</p>
 
- <p class="v57-fin">※ 오른쪽 ‘목표’ 기둥은 목표일의 전체 필요자금이고, 월별 막대는 그달 필요한 저축액이에요. 단위가 달라 높이를 직접 비교하지 않아요. 실제월 입력은 고객이 직접 기록한 값이고, 아직 오지 않은 달의 입력은 체험 시나리오예요. 모두 이 브라우저에만 저장됩니다. 미래값은 계산 전망이며 은행거래 확인이나 공식 계획 승인 기록이 아닙니다.</p></footer></section>`;
+ <p class="v57-fin">※ 오른쪽 ‘목표’ 기둥은 기적립금의 미래가치를 제외한 순필요저축 목표액과 2026.11 이후 신규 납입의 준비율을 보여줘요. 기적립금은 실제 목표자금 계산에 그대로 포함됩니다. 월별 막대는 그달 필요한 저축액이에요. 단위가 달라 높이를 직접 비교하지 않아요. 실제월 입력은 고객이 직접 기록한 값이고, 아직 오지 않은 달의 입력은 체험 시나리오예요. 모두 이 브라우저에만 저장됩니다. 미래값은 계산 전망이며 은행거래 확인이나 공식 계획 승인 기록이 아닙니다.</p></footer></section>`;
 }
 function v59UpdateConfirmUI(root){
  const s=v55State(),d=v57Progress.active,ids=IFPK_V57.dueGoals(s.goals,d);
