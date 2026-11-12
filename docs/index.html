@@ -4229,7 +4229,7 @@ function dataPage(){
  <details class="v501-accordion"><summary><span>과거 월별 데이터 확인 <small class="muted">(${rows.length}건)</small></span></summary><div class="v501-accordion-body">${v501HistoryTable(rows)}</div></details>
  <details class="v501-accordion"><summary><span>수집·수정 이력 확인</span></summary><div class="v501-accordion-body"><div class="v501-plainlist"><span>데이터 배포: ${esc(v501Date(st.generatedAt))}</span><span>최근 API 점검: ${esc(v501Date(run?.finishedAt))}</span><span>점검 결과: ${esc(run?.status||'기록 없음')}</span></div><p class="v501-unit-note">통계 기준월·공표일·API 확인·저장·웹사이트 배포시각은 각각 다를 수 있습니다.</p><h3 style="margin-top:15px">기존 발표값 수정 내역</h3>${v501RevisionPanel(spec)}</div></details>
  <details class="v501-accordion"><summary><span>현재 계획과 새 계산값 비교 <small class="muted">ⓘ CAGR·이동평균 설명</small></span></summary><div class="v501-accordion-body"><div class="keyval"><div><span>현재 재무계획에 적용 중인 값</span><b>${newPlan}</b></div><div><span>새 경제지표로 계산한 예상값 (적용 전)</span><b>${esc(derived)}</b></div></div><p>${esc(est?.formula||'지표별 산식을 충족하는 월별 관측자료가 있어야 추정값을 산출할 수 있습니다.')}</p><p><b>CAGR(연평균 복합성장률)</b>은 시작값과 끝값을 매년 일정한 비율로 연결했을 때의 평균 변화율입니다. 실제로 매년 같은 폭으로 변했다는 뜻은 아닙니다.</p><p>${esc(spec.note)}</p><p class="v501-foot">2026년 11월 최초 계획은 원본으로 보존하고, 월별 저축 실행 전망은 가장 최근 검증된 지표와 고객 입력값을 사용해 다시 계산합니다. 공식 승인 자동 반영과는 구분합니다.</p></div></details>
-
+ <details class="v501-accordion"><summary><span>고급 자료·수동 등록·검증 기능 <small class="muted">개발·검증용</small></span></summary><div class="v501-accordion-body v501-advanced-legacy">${dataPageLegacy()}</div></details>
  </div>`;
 }
 
