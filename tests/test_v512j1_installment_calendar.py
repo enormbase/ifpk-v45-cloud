@@ -56,7 +56,7 @@ def test_customer_goal_rollover_and_6_tab_visibility():
     assert "['plans','분야별 설계']" in HTML
     assert "['flow','생애현금흐름']" in HTML
     assert "['data','경제지표·설계 갱신']" in HTML
-    assert "['checks','AI 검증·갱신']" in HTML
+    assert "['checks','개발·검증 기록']" in HTML
     assert "newLoanCalendarRibbon(app.tab)+" in HTML
     assert "(app.tab==='checks'?v512kAuditDetail()+newLoanValidationPanel()+v513ValidationPanel():'')" in HTML
 

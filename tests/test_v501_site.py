@@ -1,4 +1,4 @@
-"""UI/indicator compatibility checks updated for V63.
+"""UI/indicator compatibility checks updated for the monthly-rollover dashboard.
 
 The retired advanced six-month review surface is no longer part of the
 rendered economic-data page. Its replacement explains monthly rolling.
@@ -15,26 +15,31 @@ class V501SiteTest(unittest.TestCase):
         cls.html = (ROOT / 'docs' / 'index.html').read_text(encoding='utf-8')
 
     def test_customer_first_view_and_disclosure(self):
-        # Check the live data and monthly-execution UI, not the deleted
-        # "6개월 재설계 · 6개 분야 변경 전후 검토" panel.
+        # Confirm current monthly-rollover UI, without the retired comparison.
         for label in [
             '경제지표 변화 한눈에 보기',
             '과거 월별 데이터 확인',
             '수집·수정 이력 확인',
             '현재 계획과 새 계산값 비교',
             '우리 가족의 저축 실행 현황',
-            '월별 롤링 계산 원칙 확인',
+            '1개월 롤링 재설계 초안',
+            '다음 달 저축계획',
         ]:
             with self.subTest(label=label):
                 self.assertIn(label, self.html)
 
         self.assertNotIn('6개월 재설계 · 6개 분야 변경 전후 검토', self.html)
+        self.assertNotIn('V55 · 1개월 롤링 재설계 초안', self.html)
         self.assertIn('function dataPageLegacy()', self.html)
         self.assertIn('function dataPage()', self.html)
         self.assertIn('v501Chart(rows,spec.unit)', self.html)
         self.assertIn("gdPatternPlan('home')", self.html)
         self.assertIn("gdPatternPlan('travel')", self.html)
         self.assertIn('data-gd-go-customer-spend', self.html)
+        self.assertIn('function v64FlowBreakdown()', self.html)
+        self.assertIn('function flowPageLegacy()', self.html)
+        self.assertIn('function hmTimeline()', self.html)
+        self.assertNotIn("v49HomeImpactPanel(V44_LIVE.status,'housing')", self.html)
 
     def test_rone_alias_not_merged_with_previous_base(self):
         html = self.html
