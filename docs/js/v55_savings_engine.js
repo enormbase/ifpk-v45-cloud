@@ -59,7 +59,7 @@ function simulate(snapshot,options={}){
  for(const [key,salary,spouse,gov,general,child,mortgage,auto,health,availableOriginal] of snapshot.incomeExpenseMonths){
   const t=key,scaleNew=t>=activeMonth;
   const generalAdj=scaleNew?general*(e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL):general;
-  const childAdj=scaleNew?child*(e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL):child;
+  const childAdj=child; // 양육비: 성장단계별 기준비용 + 시트의 연 2.5% 고정 물가. CPI 추가 곱셈 금지
   const carAdj=scaleNew && t>='2034-11'&&t<='2039-10'?auto*Math.max(0,carDeltaLoan):auto;
   const mortAdj=scaleNew && t>='2046-11' && t<='2056-03'?mortgage+homeDelta:mortgage;
   let income=salary+spouse+gov,expense=generalAdj+childAdj+mortAdj+carAdj+health;

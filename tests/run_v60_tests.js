@@ -26,7 +26,7 @@ assert.equal(trace.appliedCount,6);
 assert.equal(trace.parts.length,5);
 assert.equal(trace.parts.reduce((a,b)=>a+b.value,0),sim.byMonth['2026-12'].expense);
 assert.ok(trace.parts.find(x=>x.id==='general').delta>0);
-assert.ok(trace.parts.find(x=>x.id==='childcare').delta>0);
+assert.equal(trace.parts.find(x=>x.id==='childcare').delta,0,'Childcare follows stage-based costs and fixed 2.5% inflation, not live CPI');
 assert.equal(trace.parts.find(x=>x.id==='insurance').delta,0);
 const changes=T.impacts(snap,sim,data,E,{asOf,activeMonth:'2026-11'});
 for(const k of ['CPI_GENERAL','CPI_CAR','CPI_TRAVEL','DEPOSIT','MORTGAGE','HOME_PRICE']){
