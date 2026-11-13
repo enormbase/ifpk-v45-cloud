@@ -1761,7 +1761,7 @@ nav a.nav-dev{margin-left:auto;border-left:1px solid #dce5ef;padding-left:17px;c
 <script src="./js/rolling_preview_v512a.js"></script>
 <script src="./js/debt_retirement_v512f.js"></script>
 <script src="./data/v55_monthly_savings_snapshot.js"></script>
-<script src="./js/v55_savings_engine.js?v=65"></script>
+<script src="./js/v55_savings_engine.js?v=65.1"></script>
 <script src="./js/v55_savings_ui.js"></script>
 <script src="./js/v59_net_goal_progress.js"></script>
 <script src="./js/v60_indicator_trace.js"></script>
@@ -4247,15 +4247,23 @@ let cashDeltaCache=null,v55ConsumptionCache=null;
 function invalidateSpendingCache(){cashDeltaCache=null;v55ConsumptionCache=null;}
 // 2026.11 starts from the customer-entered plan; later events apply from their
 // chosen start month and keep their own CPI rollover. No retroactive change.
-function v55ConsumptionDeltas(events=spendEvents()){
- const savedEvents=events===spendEvents();
- if(savedEvents&&v55ConsumptionCache)return v55ConsumptionCache;
+function v55ConsumptionDeltas(){
+ if(v55ConsumptionCache)return v55ConsumptionCache;
+ const out={};
+ for(const [date] of IFPK_V55_DATA.incomeExpenseMonths){
+  const d=monthSpendChange(date);
+  if(d)out[date]=d;
+ }
+ return v55ConsumptionCache=out;
+}
+// Scenario previews must not overwrite the user's saved consumption events.
+function v55ConsumptionDeltasFor(events){
+ if(events===spendEvents())return v55ConsumptionDeltas();
  const out={};
  for(const [date] of IFPK_V55_DATA.incomeExpenseMonths){
   const d=monthSpendChange(date,events);
   if(d)out[date]=d;
  }
- if(savedEvents)v55ConsumptionCache=out;
  return out;
 }
 function cashDeltaMap(events=spendEvents()){
@@ -4666,9 +4674,14 @@ function v55CashOverrides(){
  }
  return x;
 }
-function v55State(events=spendEvents()){
+function v55StateOptions(){
  const months=Object.fromEntries(Object.entries(v57Progress?.history||{}).map(([k,r])=>[k,r.economicValues||{}]));
- return IFPK_V55.simulate(IFPK_V55_DATA,{asOf:dkey(seoulCurrentMonth().year,seoulCurrentMonth().month),activeMonth:v57Progress?.active||'2026-11',historyEconomics:months,actuals:v55Draft.actuals,cashOverrides:v55CashOverrides(),consumptionDeltas:v55ConsumptionDeltas(events),priority:v55Draft.priority,methods:v55Draft.methods,economics:v55Economic()});
+ return {asOf:dkey(seoulCurrentMonth().year,seoulCurrentMonth().month),activeMonth:v57Progress?.active||'2026-11',historyEconomics:months,actuals:v55Draft.actuals,cashOverrides:v55CashOverrides(),consumptionDeltas:v55ConsumptionDeltas(),priority:v55Draft.priority,methods:v55Draft.methods,economics:v55Economic()};
+}
+function v55State(events=spendEvents()){
+ const options=v55StateOptions();
+ if(events!==spendEvents())options.consumptionDeltas=v55ConsumptionDeltasFor(events);
+ return IFPK_V55.simulate(IFPK_V55_DATA,options);
 }
 function v55CashSummary(dt){return IFPK_V55_UI.infoSummary(IFPK_V55_DATA,v55State(),dt,v59EconomicSource());}
 function v55Roadmap(dt){return IFPK_V55_UI.roadmap(IFPK_V55_DATA,v55State(),dt,v55Draft);}

@@ -58,17 +58,16 @@ function simulate(snapshot,options={}){
  const homeDelta=newHousePay-1675319;
  for(const [key,salary,spouse,gov,general,child,mortgage,auto,health,availableOriginal] of snapshot.incomeExpenseMonths){
   const t=key,scaleNew=t>=activeMonth;
-  const generalAdj=scaleNew?general*(e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL):general;
-  const childAdj=scaleNew?child*(e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL):child;
+  // Apply CPI once to the customer's adjusted general budget. Childcare is
+  // already inflation-adjusted in the original monthly source snapshot.
+  const candidate=Number(options.consumptionDeltas?.[key]||0);
+  const consumptionDelta=Number.isFinite(candidate)?candidate:0;
+  const cpiFactor=scaleNew?e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL:1;
+  const generalAdj=(general+consumptionDelta)*cpiFactor;
+  const childAdj=child;
   const carAdj=scaleNew && t>='2034-11'&&t<='2039-10'?auto*Math.max(0,carDeltaLoan):auto;
   const mortAdj=scaleNew && t>='2046-11' && t<='2056-03'?mortgage+homeDelta:mortgage;
-  // Customer itemized consumption adjustments apply from their effective month.
-  // They alter only general consumption; childcare, mortgages, vehicle loans and
-  // insurance remain separate and are never counted twice. A verified month's
-  // explicit total-expense override takes precedence over this projected sum.
-  const plannedConsumptionDelta=Number(consumptionDeltas[key]);
-  const generalWithPlan=generalAdj+(Number.isFinite(plannedConsumptionDelta)?plannedConsumptionDelta:0);
-  let income=salary+spouse+gov,expense=generalWithPlan+childAdj+mortAdj+carAdj+health;
+  let income=salary+spouse+gov,expense=generalAdj+childAdj+mortAdj+carAdj+health;
   const changed=cashOverrides[key];
   if(changed&&finite(Number(changed.income))&&Number(changed.income)>=0)income=Number(changed.income);
   if(changed&&finite(Number(changed.expense))&&Number(changed.expense)>=0)expense=Number(changed.expense);
@@ -93,9 +92,11 @@ function simulate(snapshot,options={}){
   cumulativeFree+=free;
   if(free<-.01)overbooked++;
   const rec={month:t,income,expense,available,required,allocated,missing,balances,status:entryStatus,assigned:used,needed:Object.values(required).reduce((a,b)=>a+b,0),free,cumulativeFree,economicScenario:scaleNew&&econ.changes.length>0,
-   expenseParts:{general:generalWithPlan,childcare:childAdj,mortgage:mortAdj,carLoan:carAdj,insurance:health},
+   expenseParts:{general:generalAdj,childcare:childAdj,mortgage:mortAdj,carLoan:carAdj,insurance:health},
    baselineParts:{general,childcare:child,mortgage,carLoan:auto,insurance:health},
-   expenseOverride:!!(changed&&finite(Number(changed.expense))&&Number(changed.expense)>=0)};
+   expenseOverride:!!(changed&&finite(Number(changed.expense))&&Number(changed.expense)>=0),
+   consumptionPlanDelta:consumptionDelta*cpiFactor,
+   consumptionPlanChanged:Math.abs(consumptionDelta)>0.5};
   monthsOut.push(rec);monthlyByKey[t]=rec;
   for(const g of goals)if(offset(t,1)===g.deadline)book[g.id]={deadline:g.deadline,goal:g.total,expected:g.balance,shortfall:Math.max(0,g.total-g.balance),rate:g.monthlyRate};
  }

@@ -43,7 +43,10 @@ for(const token of [
  'id="cp-monthly-spending"',
  '${v65CustomerMonthEditor()}',
  'v55State(plan).byMonth[start]',
- 'v55ConsumptionDeltas(events=spendEvents())',
+ 'function v55ConsumptionDeltas()',
+ 'const d=monthSpendChange(date);',
+ 'consumptionDeltas:v55ConsumptionDeltas()',
+ 'function v55ConsumptionDeltasFor(events)',
  'v65LastSavedMonth=spendDraftStart',
  'data-v65-review-flow',
  '소비를 바꾸지 않고 실제 납입액을 기록해 다음 달로 넘어가도 됩니다',
@@ -59,12 +62,12 @@ const context={
  spendEvents:()=>savedEvents,
  v55ConsumptionCache:null,
  IFPK_V55_DATA:{incomeExpenseMonths:[['2026-12'],['2027-01'],['2027-02']]},
- monthSpendChange:(date,events)=>date<'2027-01'?0:events===savedEvents?-100000:-200000
+ monthSpendChange:(date,events=savedEvents)=>date<'2027-01'?0:events===savedEvents?-100000:-200000
 };
 vm.createContext(context);
 vm.runInContext(functionSrc,context);
 assert.strictEqual(context.v55ConsumptionDeltas()['2027-01'],-100000);
-assert.strictEqual(context.v55ConsumptionDeltas(draftEvents)['2027-01'],-200000);
+assert.strictEqual(context.v55ConsumptionDeltasFor(draftEvents)['2027-01'],-200000);
 assert.strictEqual(context.v55ConsumptionDeltas()['2027-02'],-100000);
 assert.strictEqual(context.v55ConsumptionCache['2027-01'],-100000);
 console.log('V65 PASS: exact-month expenses, forward-only savings rollover, untouched past and mortgage, verified expense override, conditional customer CTA');
