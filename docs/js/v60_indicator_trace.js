@@ -16,7 +16,7 @@ function trace(snapshot,sim,date,source){
  const row=sim.byMonth[date];
  const items=Object.keys(NAMES).map(id=>status(source,sim,id));
  if(!row)return {date,items,parts:[],expenseDiff:0,expenseOverride:false,appliedCount:items.filter(x=>x.validated).length};
- const parts=COSTS.map(([id,name,indicator])=>({id,name,indicator,customerLabel:id==='general'?'최신 소비자물가 반영':id==='childcare'?'성장단계별 비용 · 연 2.5% 물가':id==='mortgage'?(date<'2046-11'?'기존 대출 계약조건 적용':'신규 주담대 금리 반영'):id==='carLoan'?(date<'2034-11'?'차량 교체 전 · 할부 없음':'차량 교체 후 상환액 반영'):'별도 보험료 가정 반영',value:row.expenseParts?.[id]||0,base:row.baselineParts?.[id]||0,delta:(row.expenseParts?.[id]||0)-(row.baselineParts?.[id]||0),linked:!!indicator&&items.find(x=>x.id===indicator)?.validated}));
+ const parts=COSTS.map(([id,name,indicator])=>({id,name,indicator,customerLabel:id==='general'?(Math.abs(row.consumptionPlanDelta||0)>0.5?'고객 소비계획 변경·최신 소비자물가 반영':'최신 소비자물가 반영'):id==='childcare'?'성장단계별 비용 · 연 2.5% 물가':id==='mortgage'?(date<'2046-11'?'기존 대출 계약조건 적용':'신규 주담대 금리 반영'):id==='carLoan'?(date<'2034-11'?'차량 교체 전 · 할부 없음':'차량 교체 후 상환액 반영'):'별도 보험료 가정 반영',value:row.expenseParts?.[id]||0,base:row.baselineParts?.[id]||0,delta:(row.expenseParts?.[id]||0)-(row.baselineParts?.[id]||0),linked:!!indicator&&items.find(x=>x.id===indicator)?.validated}));
  return {date,items,parts,expenseDiff:parts.reduce((a,b)=>a+b.delta,0),expenseOverride:row.expenseOverride,appliedCount:items.filter(x=>x.validated).length};
 }
 function impacts(snapshot,sim,source,engine,params){

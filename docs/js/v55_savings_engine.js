@@ -58,7 +58,12 @@ function simulate(snapshot,options={}){
  const homeDelta=newHousePay-1675319;
  for(const [key,salary,spouse,gov,general,child,mortgage,auto,health,availableOriginal] of snapshot.incomeExpenseMonths){
   const t=key,scaleNew=t>=activeMonth;
-  const generalAdj=scaleNew?general*(e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL):general;
+  // Customer's month-specific general consumption plan is calculated relative to
+  // the SAME 2026-11 Sheet baseline. CPI applies exactly once to both parts.
+  const candidate=Number(options.consumptionDeltas?.[key]||0);
+  const consumptionDelta=Number.isFinite(candidate)?candidate:0;
+  const cpiFactor=scaleNew?e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL:1;
+  const generalAdj=(general+consumptionDelta)*cpiFactor;
   const childAdj=child; // 양육비: 성장단계별 기준비용 + 시트의 연 2.5% 고정 물가. CPI 추가 곱셈 금지
   const carAdj=scaleNew && t>='2034-11'&&t<='2039-10'?auto*Math.max(0,carDeltaLoan):auto;
   const mortAdj=scaleNew && t>='2046-11' && t<='2056-03'?mortgage+homeDelta:mortgage;
@@ -89,7 +94,9 @@ function simulate(snapshot,options={}){
   const rec={month:t,income,expense,available,required,allocated,missing,balances,status:entryStatus,assigned:used,needed:Object.values(required).reduce((a,b)=>a+b,0),free,cumulativeFree,economicScenario:scaleNew&&econ.changes.length>0,
    expenseParts:{general:generalAdj,childcare:childAdj,mortgage:mortAdj,carLoan:carAdj,insurance:health},
    baselineParts:{general,childcare:child,mortgage,carLoan:auto,insurance:health},
-   expenseOverride:!!(changed&&finite(Number(changed.expense))&&Number(changed.expense)>=0)};
+   expenseOverride:!!(changed&&finite(Number(changed.expense))&&Number(changed.expense)>=0),
+   consumptionPlanDelta:consumptionDelta*cpiFactor,
+   consumptionPlanChanged:Math.abs(consumptionDelta)>0.5};
   monthsOut.push(rec);monthlyByKey[t]=rec;
   for(const g of goals)if(offset(t,1)===g.deadline)book[g.id]={deadline:g.deadline,goal:g.total,expected:g.balance,shortfall:Math.max(0,g.total-g.balance),rate:g.monthlyRate};
  }

@@ -15,9 +15,10 @@ function infoSummary(snapshot,sim,date,source){const row=sim.byMonth[date],retir
  const gap=Math.max(0,row.needed-row.assigned),over=row.assigned>Math.max(0,row.available)+1;
  const basis=root.IFPK_V60_TRACE?.trace(snapshot,sim,date,source||{display:[],values:{}});
  const warn=basis?.expenseOverride?'고객이 입력한 실제 총지출을 반영했습니다. 아래 항목별 금액은 기존 계획의 예상 구성으로 실제 내역과 다를 수 있습니다.':'현재 재무설계의 지출 계획을 기준으로 예상한 금액입니다.';
+ const planNote=Math.abs(row.consumptionPlanDelta||0)>0.5?`<p class="v55-plan-adjust-note">고객이 변경한 일반소비 계획 반영: ${row.consumptionPlanDelta<0?'월 지출 감소':'월 지출 증가'} ${money(Math.abs(row.consumptionPlanDelta))}. 변경한 달부터 월 저축가능액과 목적별 권장 저축액을 다시 배분했습니다.</p>`:'';
  const summary=basis?`<div class="v60-basis-heading"><b>이 재무설계에 반영된 경제지표</b><span>${esc(date)} 조회 · 지표별 적용 기준월</span></div><p class="v60-basis-help">조회월의 예상 금액 계산에 사용된 경제지표와 자료 기준월입니다. 새 지표가 발표되지 않았다면 마지막으로 확인된 자료를 사용합니다.</p><div class="v60-basis-source">${basis.items.map(x=>`<span>${esc(x.name)} <b>${x.validated?esc(x.month)+' 기준':'최초 설계 가정'}</b></span>`).join('')}</div><details class="v60-basis-details"><summary>이번 달 예상 지출은 어떻게 계산됐나요?</summary><div class="v60-cost-list">${basis.parts.map(x=>`<div><span>${esc(x.name)} ${`<small>· ${esc(x.customerLabel||'계획 기준 예상')}</small>`}</span><strong>${money(x.value)}${Math.abs(x.delta)>1?` <small>(${x.delta>0?'+':'−'}${money(Math.abs(x.delta))})</small>`:''}</strong></div>`).join('')}</div><p>${warn} 별도 보험·건보료는 생활비에 이미 포함된 금액을 중복 차감하지 않으며, 별도 반영액 0원은 실제 보험료가 없다는 뜻이 아닙니다.</p></details>`:'';
  return `<section class="v55-summary-shade" aria-label="V55 우선순위 월별 배분 요약"><div class="v55-shade-heading"><div><h3>${esc(date)} · 우리 가족 월 저축가능액과 목적별 배분</h3><p class="v60-overview-note">실제 저축액이 확인되지 않은 달은 계획에 따른 예상 금액으로 표시됩니다.</p></div></div>
- ${summary}<div class="v55-shade-grid">
+ ${summary}${planNote}<div class="v55-shade-grid">
   <article><small>월 근로·지원 현금유입</small><strong>${money(row.income)}</strong></article>
   <article><small>일반소비·양육비·대출·보험</small><strong>${money(row.expense)}</strong></article>
   <article><small>월 저축가능액</small><strong>${money(row.available)}</strong></article>

@@ -3722,7 +3722,12 @@ function simulate(snapshot,options={}){
  const homeDelta=newHousePay-1675319;
  for(const [key,salary,spouse,gov,general,child,mortgage,auto,health,availableOriginal] of snapshot.incomeExpenseMonths){
   const t=key,scaleNew=t>=activeMonth;
-  const generalAdj=scaleNew?general*(e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL):general;
+  // Customer's month-specific general consumption plan is calculated relative to
+  // the SAME 2026-11 Sheet baseline. CPI applies exactly once to both parts.
+  const candidate=Number(options.consumptionDeltas?.[key]||0);
+  const consumptionDelta=Number.isFinite(candidate)?candidate:0;
+  const cpiFactor=scaleNew?e.CPI_GENERAL/BASELINE_ECON.CPI_GENERAL:1;
+  const generalAdj=(general+consumptionDelta)*cpiFactor;
   const childAdj=child; // 양육비: 성장단계별 기준비용 + 시트의 연 2.5% 고정 물가. CPI 추가 곱셈 금지
   const carAdj=scaleNew && t>='2034-11'&&t<='2039-10'?auto*Math.max(0,carDeltaLoan):auto;
   const mortAdj=scaleNew && t>='2046-11' && t<='2056-03'?mortgage+homeDelta:mortgage;
@@ -3753,7 +3758,9 @@ function simulate(snapshot,options={}){
   const rec={month:t,income,expense,available,required,allocated,missing,balances,status:entryStatus,assigned:used,needed:Object.values(required).reduce((a,b)=>a+b,0),free,cumulativeFree,economicScenario:scaleNew&&econ.changes.length>0,
    expenseParts:{general:generalAdj,childcare:childAdj,mortgage:mortAdj,carLoan:carAdj,insurance:health},
    baselineParts:{general,childcare:child,mortgage,carLoan:auto,insurance:health},
-   expenseOverride:!!(changed&&finite(Number(changed.expense))&&Number(changed.expense)>=0)};
+   expenseOverride:!!(changed&&finite(Number(changed.expense))&&Number(changed.expense)>=0),
+   consumptionPlanDelta:consumptionDelta*cpiFactor,
+   consumptionPlanChanged:Math.abs(consumptionDelta)>0.5};
   monthsOut.push(rec);monthlyByKey[t]=rec;
   for(const g of goals)if(offset(t,1)===g.deadline)book[g.id]={deadline:g.deadline,goal:g.total,expected:g.balance,shortfall:Math.max(0,g.total-g.balance),rate:g.monthlyRate};
  }
@@ -3799,9 +3806,10 @@ function infoSummary(snapshot,sim,date,source){const row=sim.byMonth[date],retir
  const gap=Math.max(0,row.needed-row.assigned),over=row.assigned>Math.max(0,row.available)+1;
  const basis=root.IFPK_V60_TRACE?.trace(snapshot,sim,date,source||{display:[],values:{}});
  const warn=basis?.expenseOverride?'고객이 입력한 실제 총지출을 반영했습니다. 아래 항목별 금액은 기존 계획의 예상 구성으로 실제 내역과 다를 수 있습니다.':'현재 재무설계의 지출 계획을 기준으로 예상한 금액입니다.';
+ const planNote=Math.abs(row.consumptionPlanDelta||0)>0.5?`<p class="v55-plan-adjust-note">고객이 변경한 일반소비 계획 반영: ${row.consumptionPlanDelta<0?'월 지출 감소':'월 지출 증가'} ${money(Math.abs(row.consumptionPlanDelta))}. 변경한 달부터 월 저축가능액과 목적별 권장 저축액을 다시 배분했습니다.</p>`:'';
  const summary=basis?`<div class="v60-basis-heading"><b>이 재무설계에 반영된 경제지표</b><span>${esc(date)} 조회 · 지표별 적용 기준월</span></div><p class="v60-basis-help">조회월의 예상 금액 계산에 사용된 경제지표와 자료 기준월입니다. 새 지표가 발표되지 않았다면 마지막으로 확인된 자료를 사용합니다.</p><div class="v60-basis-source">${basis.items.map(x=>`<span>${esc(x.name)} <b>${x.validated?esc(x.month)+' 기준':'최초 설계 가정'}</b></span>`).join('')}</div><details class="v60-basis-details"><summary>이번 달 예상 지출은 어떻게 계산됐나요?</summary><div class="v60-cost-list">${basis.parts.map(x=>`<div><span>${esc(x.name)} ${`<small>· ${esc(x.customerLabel||'계획 기준 예상')}</small>`}</span><strong>${money(x.value)}${Math.abs(x.delta)>1?` <small>(${x.delta>0?'+':'−'}${money(Math.abs(x.delta))})</small>`:''}</strong></div>`).join('')}</div><p>${warn} 별도 보험·건보료는 생활비에 이미 포함된 금액을 중복 차감하지 않으며, 별도 반영액 0원은 실제 보험료가 없다는 뜻이 아닙니다.</p></details>`:'';
  return `<section class="v55-summary-shade" aria-label="V55 우선순위 월별 배분 요약"><div class="v55-shade-heading"><div><h3>${esc(date)} · 우리 가족 월 저축가능액과 목적별 배분</h3><p class="v60-overview-note">실제 저축액이 확인되지 않은 달은 계획에 따른 예상 금액으로 표시됩니다.</p></div></div>
- ${summary}<div class="v55-shade-grid">
+ ${summary}${planNote}<div class="v55-shade-grid">
   <article><small>월 근로·지원 현금유입</small><strong>${money(row.income)}</strong></article>
   <article><small>일반소비·양육비·대출·보험</small><strong>${money(row.expense)}</strong></article>
   <article><small>월 저축가능액</small><strong>${money(row.available)}</strong></article>
@@ -3996,7 +4004,7 @@ function trace(snapshot,sim,date,source){
  const row=sim.byMonth[date];
  const items=Object.keys(NAMES).map(id=>status(source,sim,id));
  if(!row)return {date,items,parts:[],expenseDiff:0,expenseOverride:false,appliedCount:items.filter(x=>x.validated).length};
- const parts=COSTS.map(([id,name,indicator])=>({id,name,indicator,customerLabel:id==='general'?'최신 소비자물가 반영':id==='childcare'?'성장단계별 비용 · 연 2.5% 물가':id==='mortgage'?(date<'2046-11'?'기존 대출 계약조건 적용':'신규 주담대 금리 반영'):id==='carLoan'?(date<'2034-11'?'차량 교체 전 · 할부 없음':'차량 교체 후 상환액 반영'):'별도 보험료 가정 반영',value:row.expenseParts?.[id]||0,base:row.baselineParts?.[id]||0,delta:(row.expenseParts?.[id]||0)-(row.baselineParts?.[id]||0),linked:!!indicator&&items.find(x=>x.id===indicator)?.validated}));
+ const parts=COSTS.map(([id,name,indicator])=>({id,name,indicator,customerLabel:id==='general'?(Math.abs(row.consumptionPlanDelta||0)>0.5?'고객 소비계획 변경·최신 소비자물가 반영':'최신 소비자물가 반영'):id==='childcare'?'성장단계별 비용 · 연 2.5% 물가':id==='mortgage'?(date<'2046-11'?'기존 대출 계약조건 적용':'신규 주담대 금리 반영'):id==='carLoan'?(date<'2034-11'?'차량 교체 전 · 할부 없음':'차량 교체 후 상환액 반영'):'별도 보험료 가정 반영',value:row.expenseParts?.[id]||0,base:row.baselineParts?.[id]||0,delta:(row.expenseParts?.[id]||0)-(row.baselineParts?.[id]||0),linked:!!indicator&&items.find(x=>x.id===indicator)?.validated}));
  return {date,items,parts,expenseDiff:parts.reduce((a,b)=>a+b.delta,0),expenseOverride:row.expenseOverride,appliedCount:items.filter(x=>x.validated).length};
 }
 function impacts(snapshot,sim,source,engine,params){
@@ -4188,8 +4196,19 @@ function monthSpendChange(date,events=spendEvents()){
  return Math.round(projected-original);
 }
 function monthSpendDelta(date){return monthSpendChange(date);}
-let cashDeltaCache=null;
-function invalidateSpendingCache(){cashDeltaCache=null;}
+let cashDeltaCache=null,v55ConsumptionCache=null;
+function invalidateSpendingCache(){cashDeltaCache=null;v55ConsumptionCache=null;}
+// 2026.11 starts from the customer-entered plan; later events apply from their
+// chosen start month and keep their own CPI rollover. No retroactive change.
+function v55ConsumptionDeltas(){
+ if(v55ConsumptionCache)return v55ConsumptionCache;
+ const out={};
+ for(const [date] of IFPK_V55_DATA.incomeExpenseMonths){
+  const d=monthSpendChange(date);
+  if(d)out[date]=d;
+ }
+ v55ConsumptionCache=out;return out;
+}
 function cashDeltaMap(events=spendEvents()){
  const deltas={};let total=0;
  for(const m of Object.keys(INITIAL_MONTHLY).sort()){
@@ -4586,9 +4605,21 @@ function v59EconomicSource(){
  return IFPK_V59_ECON.latest(V44_LIVE.online&&V44_LIVE.status?.published?V44_LIVE.status:{},V44_LIVE.online?V44_LIVE.records:[],month);
 }
 function v55Economic(){return v59EconomicSource().values;}
+// A superseded 330만원 NOVEMBER trial cash entry must not displace the
+// 2026.11 initial budget (2.4m + .379m + .411667m). Preserve all actual
+// savings and every other customer cash entry; do not mutate localStorage.
+function v55CashOverrides(){
+ const x={...v55Draft.cash},old=x['2026-11'];
+ if(old&&Number(old.expense)===3300000){
+  const corrected={...old};delete corrected.expense;
+  if(Object.keys(corrected).length)x['2026-11']=corrected;
+  else delete x['2026-11'];
+ }
+ return x;
+}
 function v55State(){
  const months=Object.fromEntries(Object.entries(v57Progress?.history||{}).map(([k,r])=>[k,r.economicValues||{}]));
- return IFPK_V55.simulate(IFPK_V55_DATA,{asOf:dkey(seoulCurrentMonth().year,seoulCurrentMonth().month),activeMonth:v57Progress?.active||'2026-11',historyEconomics:months,actuals:v55Draft.actuals,cashOverrides:v55Draft.cash,priority:v55Draft.priority,methods:v55Draft.methods,economics:v55Economic()});
+ return IFPK_V55.simulate(IFPK_V55_DATA,{asOf:dkey(seoulCurrentMonth().year,seoulCurrentMonth().month),activeMonth:v57Progress?.active||'2026-11',historyEconomics:months,actuals:v55Draft.actuals,cashOverrides:v55CashOverrides(),consumptionDeltas:v55ConsumptionDeltas(),priority:v55Draft.priority,methods:v55Draft.methods,economics:v55Economic()});
 }
 function v55CashSummary(dt){return IFPK_V55_UI.infoSummary(IFPK_V55_DATA,v55State(),dt,v59EconomicSource());}
 function v55Roadmap(dt){return IFPK_V55_UI.roadmap(IFPK_V55_DATA,v55State(),dt,v55Draft);}
@@ -4635,7 +4666,7 @@ function v59GoalDestination(date,sim,g){
 }
 function v58BeforeLastActual(date,lastMonth){
  const prev={...v55Draft.actuals};delete prev[lastMonth];
- const old=IFPK_V55.simulate(IFPK_V55_DATA,{asOf:dkey(seoulCurrentMonth().year,seoulCurrentMonth().month),actuals:prev,cashOverrides:v55Draft.cash,priority:v55Draft.priority,methods:v55Draft.methods,economics:v55Economic()});
+ const old=IFPK_V55.simulate(IFPK_V55_DATA,{asOf:dkey(seoulCurrentMonth().year,seoulCurrentMonth().month),actuals:prev,cashOverrides:v55CashOverrides(),consumptionDeltas:v55ConsumptionDeltas(),priority:v55Draft.priority,methods:v55Draft.methods,economics:v55Economic()});
  return old.byMonth[date]||{required:{}};
 }
 function v58HistoryPanel(date,sim,history){
@@ -5199,7 +5230,7 @@ function spendingForm(){
  <section class="consumption-box"><div class="spend-group-head"><div><h3>변동지출</h3><p>생활 방식에 따라 달라지는 돈</p></div><span class="spend-group-tag">선택 지출</span></div>${frows('variable')}<div class="spending-subtotal"><span>변동지출 합계</span><strong id="variable-subtotal">${KRW(spendingTotal(plan,'variable'))}</strong></div><p class="subscope">최초 계획의 ${startReadable} 예상액 ${KRW(spendingTotal(baseStart,'variable'))}</p></section></div>
  <section class="locked-expenses" aria-label="다른 설계에서 계산되는 수정 불가 항목"><div class="locked-heading"><div><strong>별도 설계에서 자동 계산되는 비용</strong><p>생활비 계산에는 포함되지만, 이 화면에서 수정할 수 없어요.</p></div><span class="locked-badge">🔒 수정 불가</span></div><div class="spending-lockbox"><div class="locked-expense"><div class="locked-expense-title"><span aria-hidden="true">🔒</span><strong>주택담보대출 상환금</strong></div><b>${KRW(CORE_MORTGAGE)}</b><small>2026년 11월 기준 · 주택설계에서 계산</small></div><div class="locked-expense"><div class="locked-expense-title"><span aria-hidden="true">🔒</span><strong>자녀 양육비</strong></div><b>${KRW(CORE_CHILDCARE)}</b><small>2026년 11월 기준 · 양육설계에서 계산</small></div></div></section>
  <section aria-label="지출 변경 결과" class="spend-result-section"><div class="spend-step-caption"><span class="number-chip">03</span><div><h3>${startReadable}에 이렇게 달라져요</h3><p>바꾼 소비금액을 적용하면 예상 수입·지출과 저축 여유가 즉시 달라집니다.</p></div></div><div class="scenario-results" aria-label="수정 중인 소비계획의 실시간 예상 결과"><div class="spend-overview"><span>일반소비 예상액</span><strong id="spend-general">${KRW(spendingTotal(plan))}</strong><small>이번에 수정한 금액</small></div><div class="spend-overview"><span>생활비·필수지출 합계</span><strong id="spend-all">—</strong><small>다른 설계의 지출도 포함</small></div><div class="spend-overview"><span>저축하기 전 남는 돈</span><strong id="spend-available">—</strong><small>수입에서 지출을 뺀 금액</small></div><div class="spend-result-focus spend-result-primary"><span>목표저축 후 이번 달 남는 돈</span><strong id="spend-free">—</strong><small id="spend-free-caption">목표저축액은 기존 계획대로 유지</small></div><div class="spend-result-focus spend-cumulative-focus" id="spend-cumulative-card" aria-live="polite"><span id="spend-cumulative-label">이 시점까지 누적된 현금</span><strong id="spend-cumulative">—</strong><small id="spend-cumulative-caption">2026년 11월부터 선택월까지 · 저장 전 예상</small></div></div><div id="scenario-live-summary" class="simulation-highlight" aria-live="polite"></div><div id="future-scenario-comparison" class="future-scenario-comparison" aria-live="polite"></div>
- <div class="scenario-actions scenario-actions-clear"><div class="spending-save-strip"><div><b>${existing?'저장된 계획을 수정할까요?':'이 소비계획을 저장할까요?'}</b><p>변경한 금액은 <strong>${startReadable}부터</strong> 반영돼요. 은퇴 후 생활비와 은퇴자산 계산은 유지됩니다.</p></div><button type="submit" class="primary">${existing?'선택한 달의 소비계획 수정·적용':'이 시점부터 소비계획 추가·적용'} →</button></div></div></section>
+ <div class="scenario-actions scenario-actions-clear"><div class="spending-save-strip"><div><b>${existing?'저장된 계획을 수정할까요?':'이 소비계획을 저장할까요?'}</b><p>변경한 금액은 <strong>${startReadable}부터</strong> 월 저축가능액과 4대 목적의 우선순위별 권장 저축액에 연결됩니다. 이전 달의 실제 저축기록은 유지돼요. 은퇴 후 생활비 가정은 별도입니다.</p></div><button type="submit" class="primary">${existing?'선택한 달의 소비계획 수정·적용':'이 시점부터 소비계획 추가·적용'} →</button></div></div></section>
  </form>
  ${budgetCheck?`<details class="cash-diagnostic"><summary><span><b>현금 부족 여부 자세히 보기</b><small>${lookupReadable} 기준 · 소비 조정으로 누적 현금이 어떻게 달라지는지 확인해요.</small></span><span class="disclosure-affordance">자세히 보기 <span aria-hidden="true">⌄</span></span></summary>${budgetCheck}</details>`:''}
  <details class="history-disclosure" id="spending-history"><summary><span class="history-icon" aria-hidden="true">▤</span><span class="history-summary-text"><b>저장된 소비 변경 이력</b><small>${events.length}건 저장 · ${lastText} · 필요할 때 수정하거나 삭제하세요.</small></span><span class="history-open-tag">이력 보기 <span aria-hidden="true">⌄</span></span></summary><div class="history-panel"><div class="spend-history-title"><p>각 변경안은 다음 변경 시점 전까지 적용됩니다. 이전에 절약한 현금도 계속 누적돼요.</p>${events.length?`<button type="button" id="clear-consumption-plan" class="secondary danger-light">모든 변경안 삭제</button>`:''}</div><div class="history-list">${eventCards}</div></div></details>
@@ -5669,7 +5700,7 @@ function v59LatestSources(){
 }
 function v60ImpactAudit(){
  const src=v59EconomicSource(),sim=v55State(),months=Object.fromEntries(Object.entries(v57Progress.history||{}).map(([k,r])=>[k,r.economicValues||{}]));
- const args={asOf:dkey(seoulCurrentMonth().year,seoulCurrentMonth().month),activeMonth:v57Progress.active,historyEconomics:months,actuals:v55Draft.actuals,cashOverrides:v55Draft.cash,priority:v55Draft.priority,methods:v55Draft.methods};
+ const args={asOf:dkey(seoulCurrentMonth().year,seoulCurrentMonth().month),activeMonth:v57Progress.active,historyEconomics:months,actuals:v55Draft.actuals,cashOverrides:v55CashOverrides(),consumptionDeltas:v55ConsumptionDeltas(),priority:v55Draft.priority,methods:v55Draft.methods};
  const impacts=IFPK_V60_TRACE.impacts(IFPK_V55_DATA,sim,src,IFPK_V55,args);
  return `<details class="v60-impact"><summary>경제지표별 계산 영향 확인하기 · 6종 독립 재계산</summary><div class="v60-impact-body"><p>각 지표만 직전 기준값으로 돌렸을 때와 비교해 새 지표의 영향을 분리 계산합니다. 실제 저축액과 다른 지표 조건은 고정합니다.</p><div class="v60-impact-list">${Object.keys(IFPK_V60_TRACE.NAMES).map(id=>{const v=impacts[id];return `<div><b>${esc(IFPK_V60_TRACE.NAMES[id])}</b><span>${esc(v.label||v.status)}</span><strong>${v.status==='재계산 검증'?(v.delta>=0?'+':'−')+KRW(Math.abs(Math.round(v.delta))):'변경 없음'}</strong></div>`;}).join('')}</div><p>보험료·대출규제(LTV·DSR)·연금제도는 이번 지표 6종의 자동 재계산 범위가 아닙니다. 표시액은 연결된 월별 전망에 대한 민감도이며 공식 승인된 재무계획 변경액이 아닙니다.</p></div></details>`;
 }
