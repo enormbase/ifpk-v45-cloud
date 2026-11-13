@@ -1,7 +1,7 @@
-"""UI/indicator compatibility checks updated for V59.
+"""UI/indicator compatibility checks updated for V63.
 
-The old six-month replan panel was deliberately removed in V59, so a
-presence-check for that retired copy must not block deployment.
+The retired advanced six-month review surface is no longer part of the
+rendered economic-data page. Its replacement explains monthly rolling.
 """
 import unittest
 from pathlib import Path
@@ -23,7 +23,7 @@ class V501SiteTest(unittest.TestCase):
             '수집·수정 이력 확인',
             '현재 계획과 새 계산값 비교',
             '우리 가족의 저축 실행 현황',
-            '고급 자료·수동 등록·검증 기능',
+            '월별 롤링 계산 원칙 확인',
         ]:
             with self.subTest(label=label):
                 self.assertIn(label, self.html)
@@ -32,6 +32,9 @@ class V501SiteTest(unittest.TestCase):
         self.assertIn('function dataPageLegacy()', self.html)
         self.assertIn('function dataPage()', self.html)
         self.assertIn('v501Chart(rows,spec.unit)', self.html)
+        self.assertIn("gdPatternPlan('home')", self.html)
+        self.assertIn("gdPatternPlan('travel')", self.html)
+        self.assertIn('data-gd-go-customer-spend', self.html)
 
     def test_rone_alias_not_merged_with_previous_base(self):
         html = self.html
