@@ -12,8 +12,8 @@ class V55Test(unittest.TestCase):
 
     def test_html_links_runtime(self):
         s=(ROOT/'docs'/'index.html').read_text('utf-8')
-        self.assertIn('LIFE PLAN STUDIO · IFPK</small>',s)
-        self.assertIn('대시보드</title>',s)
+        self.assertIn('금은동 재무설계 플랫폼</div>',s)
+        self.assertIn('금은동 재무설계 플랫폼</title>',s)
         self.assertIn('v55_savings_engine.js',s)
         self.assertIn('v55_savings_ui.js',s)
         self.assertIn('v55_monthly_savings_snapshot.js',s)
